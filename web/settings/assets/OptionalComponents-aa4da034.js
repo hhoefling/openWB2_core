@@ -1,4 +1,4 @@
-import{C as D}from"./index-5ccb55f1.js";import{_ as x,q as o,l as s,m as f,u as i,A as l,K as u,v as p,z as a}from"./vendor-29588c66.js";import"./vendor-fortawesome-2889b4a5.js";import"./vendor-bootstrap-4e27eaa6.js";import"./vendor-jquery-ba0ce817.js";import"./vendor-axios-75370482.js";import"./vendor-sortablejs-66a8dc70.js";const k={name:"OpenwbOptionalComponents",mixins:[D],data(){return{mqttTopicsToSubscribe:["openWB/general/extern","openWB/optional/rfid/active","openWB/optional/led/active","ToDo/optional/led/instant_blocked","ToDo/optional/led/pv_blocked","ToDo/optional/led/scheduled_blocked","ToDo/optional/led/standby_blocked","ToDo/optional/led/stop_blocked","ToDo/optional/led/instant","ToDo/optional/led/pv","ToDo/optional/led/scheduled","ToDo/optional/led/standby","ToDo/optional/led/stop","openWB/optional/int_display/active","openWB/optional/int_display/standby","openWB/optional/int_display/on_if_plugged_in","openWB/optional/int_display/pin_active","openWB/optional/int_display/pin_code","openWB/optional/int_display/theme","openWB/optional/et/active","openWB/optional/et/config/provider","openWB/optional/et/config/max_price"]}}},m={class:"optionalComponents"},L={name:"optionalComponentsForm"},c={key:0},E=i("br",null,null,-1),g=i("br",null,null,-1),_=["innerHTML"];function w(n,t,B,$,h,y){const b=o("openwb-base-button-group-input"),d=o("openwb-base-alert"),v=o("openwb-base-card"),r=o("openwb-base-submit-buttons");return s(),f("div",m,[i("form",L,[l(v,{title:"RFID"},{default:u(()=>[l(b,{title:"RFID aktivieren","model-value":n.$store.state.mqtt["openWB/optional/rfid/active"],"onUpdate:modelValue":t[0]||(t[0]=e=>n.updateState("openWB/optional/rfid/active",e)),buttons:[{buttonValue:!1,text:"Aus",class:"btn-outline-danger",icon:"fas fa-times"},{buttonValue:!0,text:"An",class:"btn-outline-success"}]},null,8,["model-value"]),n.$store.state.mqtt["openWB/optional/rfid/active"]===!0?(s(),f("div",c,[l(d,{subtype:"info"},{default:u(()=>[p(" Die RFID-Tags, die an dem jeweiligen Ladepunkt gültig sind, müssen in der Ladepunkt-Vorlage hinterlegt werden. Der RFID-Tag muss in den Einstellungen des Fahrzeugs diesem zugeordnet werden."),E,p(" Es kann zuerst angesteckt und dann der RFID-Tag gescannt werden oder zuerst der RFID-Tag gescannt werden. Dann muss innerhalb von 5 Minuten ein Auto angesteckt werden, sonst wird der RFID-Tag verworfen. Das Auto wird erst nach dem Anstecken zugeordnet."),g,i("span",{innerHTML:n.$store.state.text.rfidWiki},null,8,_)]),_:1})])):a("v-if",!0)]),_:1}),a(` <openwb-base-card title="LED-Ausgänge">
+import{_ as w,C as T}from"./index-6ce1e6f0.js";import{_ as B}from"./dynamic-import-helper-be004503.js";import{_ as D,q as l,l as i,m as d,A as e,K as f,v as r,x,u as b,$,y as g,a0 as W,z as u}from"./vendor-29588c66.js";import"./vendor-fortawesome-2889b4a5.js";import"./vendor-bootstrap-4e27eaa6.js";import"./vendor-jquery-ba0ce817.js";import"./vendor-axios-75370482.js";import"./vendor-sortablejs-66a8dc70.js";const S={name:"DisplayThemeFallback",emits:["update:configuration"],props:{configuration:{type:Object,required:!0},displayThemeType:String},methods:{updateConfiguration(t,n=void 0){this.$emit("update:configuration",{value:t,object:n})}}},q={class:"display-theme-fallback"};function V(t,n,a,c,k,s){const p=l("openwb-base-alert"),v=l("openwb-base-textarea");return i(),d("div",q,[e(p,{subtype:"warning"},{default:f(()=>[r(' Es wurde keine Konfigurationsseite für das Display Theme "'+x(a.displayThemeType)+'" gefunden. Die Einstellungen können als JSON direkt bearbeitet werden. ',1)]),_:1}),e(v,{title:"Konfiguration",subtype:"json","model-value":a.configuration,"onUpdate:modelValue":n[0]||(n[0]=m=>s.updateConfiguration(m,"configuration"))},{help:f(()=>[r(" Bitte prüfen Sie, ob die Eingaben richtig interpretiert werden. ")]),_:1},8,["model-value"]),e(p,{subtype:"info"},{default:f(()=>[b("pre",null,x(JSON.stringify(a.configuration,void 0,2)),1)]),_:1})])}const A=D(S,[["render",V],["__file","/opt/openWB-dev/openwb-ui-settings/src/components/display_themes/OpenwbDisplayThemeFallback.vue"]]),C={name:"OpenwbDisplayThemeProxy",emits:["update:configuration"],props:{displayThemeType:{type:String,required:!0},configuration:{type:Object,required:!0}},computed:{myComponent(){return console.debug(`loading display theme: ${this.displayThemeType}`),$({loader:()=>B(Object.assign({"./cards/displayTheme.vue":()=>w(()=>import("./displayTheme-1e526032.js"),["assets/displayTheme-1e526032.js","assets/vendor-29588c66.js","assets/vendor-sortablejs-66a8dc70.js","assets/vendor-c2bc9875.css"])}),`./${this.displayThemeType}/displayTheme.vue`),errorComponent:A})}},methods:{updateConfiguration(t){this.$emit("update:configuration",t)}}};function I(t,n,a,c,k,s){return i(),g(W(s.myComponent),{configuration:a.configuration,displayThemeType:a.displayThemeType,"onUpdate:configuration":n[0]||(n[0]=p=>s.updateConfiguration(p))},null,40,["configuration","displayThemeType"])}const N=D(C,[["render",I],["__file","/opt/openWB-dev/openwb-ui-settings/src/components/display_themes/OpenwbDisplayThemeProxy.vue"]]),O={name:"OpenwbOptionalComponents",mixins:[T],components:{OpenwbDisplayThemeProxy:N},data(){return{mqttTopicsToSubscribe:["openWB/general/extern","openWB/optional/rfid/active","openWB/optional/led/active","ToDo/optional/led/instant_blocked","ToDo/optional/led/pv_blocked","ToDo/optional/led/scheduled_blocked","ToDo/optional/led/standby_blocked","ToDo/optional/led/stop_blocked","ToDo/optional/led/instant","ToDo/optional/led/pv","ToDo/optional/led/scheduled","ToDo/optional/led/standby","ToDo/optional/led/stop","openWB/optional/int_display/active","openWB/optional/int_display/standby","openWB/optional/int_display/on_if_plugged_in","openWB/optional/int_display/pin_active","openWB/optional/int_display/pin_code","openWB/optional/int_display/theme","openWB/system/configurable/display_themes","openWB/optional/et/active","openWB/optional/et/config/provider","openWB/optional/et/config/max_price"]}},computed:{displayThemeList:{get(){return this.$store.state.mqtt["openWB/system/configurable/display_themes"]}}},methods:{getDisplayThemeDefaultConfiguration(t){const n=this.displayThemeList.find(a=>a.value==t);return Object.prototype.hasOwnProperty.call(n,"defaults")?{...n.defaults.configuration}:(console.warn("no default configuration found for display theme type!",t),{})},updateSelectedDisplayTheme(t){this.updateState("openWB/optional/int_display/theme",t,"type"),this.updateState("openWB/optional/int_display/theme",this.getDisplayThemeDefaultConfiguration(t),"configuration")},updateConfiguration(t,n){console.debug("updateConfiguration",t,n),this.updateState(t,n.value,n.object)}}},F={class:"optionalComponents"},M={name:"optionalComponentsForm"},P={key:0},z=b("br",null,null,-1),R=b("br",null,null,-1),j=["innerHTML"],U={key:0},J={key:1},H={key:0},K=b("hr",null,null,-1),Z=b("hr",null,null,-1),G={key:1};function Q(t,n,a,c,k,s){const p=l("openwb-base-button-group-input"),v=l("openwb-base-alert"),m=l("openwb-base-card"),_=l("openwb-base-heading"),L=l("openwb-base-range-input"),E=l("openwb-base-select-input"),y=l("openwb-display-theme-proxy"),h=l("openwb-base-submit-buttons");return i(),d("div",F,[b("form",M,[e(m,{title:"RFID"},{default:f(()=>[e(p,{title:"RFID aktivieren","model-value":t.$store.state.mqtt["openWB/optional/rfid/active"],"onUpdate:modelValue":n[0]||(n[0]=o=>t.updateState("openWB/optional/rfid/active",o)),buttons:[{buttonValue:!1,text:"Aus",class:"btn-outline-danger"},{buttonValue:!0,text:"An",class:"btn-outline-success"}]},null,8,["model-value"]),t.$store.state.mqtt["openWB/optional/rfid/active"]===!0?(i(),d("div",P,[e(v,{subtype:"info"},{default:f(()=>[r(" Die RFID-Tags, die an dem jeweiligen Ladepunkt gültig sind, müssen in der Ladepunkt-Vorlage hinterlegt werden. Der RFID-Tag muss in den Einstellungen des Fahrzeugs diesem zugeordnet werden."),z,r(" Es kann zuerst angesteckt und dann der RFID-Tag gescannt werden oder zuerst der RFID-Tag gescannt werden. Dann muss innerhalb von 5 Minuten ein Auto angesteckt werden, sonst wird der RFID-Tag verworfen. Das Auto wird erst nach dem Anstecken zugeordnet."),R,b("span",{innerHTML:t.$store.state.text.rfidWiki},null,8,j)]),_:1})])):u("v-if",!0)]),_:1}),u(` <openwb-base-card title="LED-Ausgänge">
 				<openwb-base-button-group-input
 					title="LED-Ausgänge aktivieren"
 					:model-value="
@@ -12,7 +12,6 @@ import{C as D}from"./index-5ccb55f1.js";import{_ as x,q as o,l as s,m as f,u as 
 							buttonValue: false,
 							text: 'Aus',
 							class: 'btn-outline-danger',
-							icon: 'fas fa-times',
 						},
 						{
 							buttonValue: true,
@@ -915,124 +914,7 @@ import{C as D}from"./index-5ccb55f1.js";import{_ as x,q as o,l as s,m as f,u as 
 						/>
 					</div>
 				</div>
-			</openwb-base-card> `),a(` <openwb-base-card title="Display (intern oder extern)">
-				<div v-if="$store.state.mqtt['openWB/general/extern'] === true">
-					<openwb-base-alert subtype="info">
-						Diese Einstellungen sind nicht verfügbar, solange sich
-						diese openWB im Modus "Nur Ladepunkt" befindet.
-					</openwb-base-alert>
-				</div>
-				<div v-else>
-					<openwb-base-button-group-input
-						title="Integriertes Display"
-						:model-value="
-							$store.state.mqtt[
-								'openWB/optional/int_display/active'
-							]
-						"
-						@update:model-value="
-							updateState(
-								'openWB/optional/int_display/active',
-								$event
-							)
-						"
-						:buttons="[
-							{
-								buttonValue: false,
-								text: 'Nein',
-								class: 'btn-outline-danger',
-							},
-							{
-								buttonValue: true,
-								text: 'Ja',
-								class: 'btn-outline-success',
-							},
-						]"
-					/>
-					<div
-						v-if="
-							$store.state.mqtt[
-								'openWB/optional/int_display/active'
-							] == true
-						"
-					>
-						<hr />
-						<openwb-base-heading
-							>Display Standby</openwb-base-heading
-						>
-						<openwb-base-range-input
-							title="Ausschaltzeit"
-							:min="0"
-							:max="12"
-							:step="1"
-							:model-value="
-								$store.state.mqtt[
-									'openWB/optional/int_display/standby'
-								]
-							"
-							@update:model-value="
-								updateState(
-									'openWB/optional/int_display/standby',
-									$event
-								)
-							"
-							unit="Sek"
-							:labels="[
-								{
-									label: 'Immer an',
-									value: 0,
-								},
-								{
-									label: 5,
-									value: 5,
-								},
-								{
-									label: 10,
-									value: 10,
-								},
-								{
-									label: 15,
-									value: 15,
-								},
-								{
-									label: 30,
-									value: 30,
-								},
-								{
-									label: 45,
-									value: 45,
-								},
-								{
-									label: '1 Min',
-									value: 60,
-								},
-								{
-									label: '1,5 Min',
-									value: 90,
-								},
-								{
-									label: '2 Min',
-									value: 120,
-								},
-								{
-									label: '3 Min',
-									value: 180,
-								},
-								{
-									label: '4 Min',
-									value: 240,
-								},
-								{
-									label: '5 Min',
-									value: 300,
-								},
-								{
-									label: '10 Min',
-									value: 600,
-								},
-							]"
-						/>
-						<openwb-base-button-group-input
+			</openwb-base-card> `),e(m,{title:"Display (intern oder extern)"},{default:f(()=>[t.$store.state.mqtt["openWB/general/extern"]===!0?(i(),d("div",U,[e(v,{subtype:"info"},{default:f(()=>[r(' Diese Einstellungen sind nicht verfügbar, solange sich diese openWB im Modus "Nur Ladepunkt" befindet. ')]),_:1})])):(i(),d("div",J,[e(p,{title:"Integriertes Display","model-value":t.$store.state.mqtt["openWB/optional/int_display/active"],"onUpdate:modelValue":n[1]||(n[1]=o=>t.updateState("openWB/optional/int_display/active",o)),buttons:[{buttonValue:!1,text:"Nein",class:"btn-outline-danger"},{buttonValue:!0,text:"Ja",class:"btn-outline-success"}]},null,8,["model-value"]),t.$store.state.mqtt["openWB/optional/int_display/active"]==!0?(i(),d("div",H,[K,e(_,null,{default:f(()=>[r("Display Standby")]),_:1}),e(L,{title:"Ausschaltzeit",min:0,max:12,step:1,"model-value":t.$store.state.mqtt["openWB/optional/int_display/standby"],"onUpdate:modelValue":n[2]||(n[2]=o=>t.updateState("openWB/optional/int_display/standby",o)),unit:"Sek",labels:[{label:"Immer an",value:0},{label:5,value:5},{label:10,value:10},{label:15,value:15},{label:30,value:30},{label:45,value:45},{label:"1 Min",value:60},{label:"1,5 Min",value:90},{label:"2 Min",value:120},{label:"3 Min",value:180},{label:"4 Min",value:240},{label:"5 Min",value:300},{label:"10 Min",value:600}]},null,8,["model-value"]),u(` <openwb-base-button-group-input
 							v-if="
 								$store.state.mqtt[
 									'openWB/optional/int_display/standby'
@@ -1068,9 +950,7 @@ import{C as D}from"./index-5ccb55f1.js";import{_ as x,q as o,l as s,m as f,u as 
 								sich das Display automatisch ein, wenn ein
 								Fahrzeug angesteckt wird.
 							</template>
-						</openwb-base-button-group-input>
-					</div>
-					<hr />
+						</openwb-base-button-group-input> `)])):u("v-if",!0),u(` <hr />
 					<openwb-base-heading>PIN-Sperre</openwb-base-heading>
 					<openwb-base-button-group-input
 						title="Display mit PIN schützen"
@@ -1126,71 +1006,7 @@ import{C as D}from"./index-5ccb55f1.js";import{_ as x,q as o,l as s,m as f,u as 
 								Zahlen enthalten.
 							</template>
 						</openwb-base-text-input>
-					</div>
-					<hr />
-					<openwb-base-select-input
-						title="Theme des Displays"
-						:model-value="
-							$store.state.mqtt[
-								'openWB/optional/int_display/theme'
-							]
-						"
-						@update:model-value="
-							updateState(
-								'openWB/optional/int_display/theme',
-								$event
-							)
-						"
-						:options="[
-							{
-								value: 'cards',
-								text: 'Cards',
-							},
-							{
-								value: 'gauges',
-								text: 'Gauges',
-							},
-							{
-								value: 'slave',
-								text: 'Nur Ladeleistung (keine Bedienung möglich)',
-							},
-						]"
-					/>
-					<div
-						v-if="
-							$store.state.mqtt[
-								'openWB/optional/int_display/theme'
-							] == 'cards'
-						"
-					>
-						<openwb-base-alert subtype="info">
-							ToDo: Optionen für das Cards-Theme...
-						</openwb-base-alert>
-					</div>
-					<div
-						v-if="
-							$store.state.mqtt[
-								'openWB/optional/int_display/theme'
-							] == 'gauges'
-						"
-					>
-						<openwb-base-alert subtype="info">
-							ToDo: Optionen für das Gauges-Theme...
-						</openwb-base-alert>
-					</div>
-					<div
-						v-if="
-							$store.state.mqtt[
-								'openWB/optional/int_display/theme'
-							] == 'slave'
-						"
-					>
-						<openwb-base-alert subtype="info">
-							Das Theme "Nur Ladeleistung" bietet keine Optionen.
-						</openwb-base-alert>
-					</div>
-				</div>
-			</openwb-base-card> `),a(` <openwb-base-card title="Variable Stromtarife">
+					</div> `),Z,t.$store.state.mqtt["openWB/optional/int_display/theme"]!==void 0?(i(),d("div",G,[e(E,{class:"mb-2",title:"Theme des Displays",options:s.displayThemeList,"model-value":t.$store.state.mqtt["openWB/optional/int_display/theme"].type,"onUpdate:modelValue":n[3]||(n[3]=o=>s.updateSelectedDisplayTheme(o))},null,8,["options","model-value"]),t.$store.state.mqtt["openWB/optional/int_display/theme"].type?(i(),g(y,{key:0,displayThemeType:t.$store.state.mqtt["openWB/optional/int_display/theme"].type,configuration:t.$store.state.mqtt["openWB/optional/int_display/theme"].configuration,"onUpdate:configuration":n[4]||(n[4]=o=>s.updateConfiguration("openWB/optional/int_display/theme",o))},null,8,["displayThemeType","configuration"])):u("v-if",!0)])):u("v-if",!0)]))]),_:1}),u(` <openwb-base-card title="Variable Stromtarife">
 				<div v-if="$store.state.mqtt['openWB/general/extern'] === true">
 					<openwb-base-alert subtype="info">
 						Diese Einstellungen sind nicht verfügbar, solange sich
@@ -1263,4 +1079,4 @@ import{C as D}from"./index-5ccb55f1.js";import{_ as x,q as o,l as s,m as f,u as 
 						/>
 					</div>
 				</div>
-			</openwb-base-card> `),l(r,{formName:"optionalComponentsForm",onSave:t[1]||(t[1]=e=>n.$emit("save")),onReset:t[2]||(t[2]=e=>n.$emit("reset")),onDefaults:t[3]||(t[3]=e=>n.$emit("defaults"))})])])}const I=x(k,[["render",w],["__file","/opt/openWB-dev/openwb-ui-settings/src/views/OptionalComponents.vue"]]);export{I as default};
+			</openwb-base-card> `),e(h,{formName:"optionalComponentsForm",onSave:n[5]||(n[5]=o=>t.$emit("save")),onReset:n[6]||(n[6]=o=>t.$emit("reset")),onDefaults:n[7]||(n[7]=o=>t.$emit("defaults"))})])])}const it=D(O,[["render",Q],["__file","/opt/openWB-dev/openwb-ui-settings/src/views/OptionalComponents.vue"]]);export{it as default};
