@@ -5,6 +5,7 @@ from enum import IntEnum
 from typing import Optional, Callable, TypeVar
 
 from helpermodules import compatibility, exceptions, pub
+from helpermodules.constants import NO_ERROR
 from modules.common import component_type
 from modules.common.component_setup import ComponentSetup
 
@@ -18,15 +19,29 @@ class FaultStateLevel(IntEnum):
 
 
 class ComponentInfo:
-    def __init__(self, id: int, name: str, type: str, hostname: str = "localhost") -> None:
+    def __init__(self,
+                 id: int,
+                 name: str,
+                 type: str,
+                 hostname: str = "localhost",
+                 parent_id: Optional[int] = None,
+                 parent_hostname: Optional[str] = None) -> None:
         self.id = id
         self.name = name
         self.type = type
         self.hostname = hostname
+        self.parent_id = parent_id
+        self.parent_hostname = parent_hostname
 
     @staticmethod
-    def from_component_config(component_config: ComponentSetup, hostname: str = "localhost"):
-        return ComponentInfo(component_config.id, component_config.name, component_config.type, hostname)
+    def from_component_config(component_config: ComponentSetup,
+                              hostname: str = "localhost",
+                              parent_hostname: Optional[str] = None):
+        return ComponentInfo(component_config.id,
+                             component_config.name,
+                             component_config.type,
+                             hostname,
+                             parent_hostname)
 
 
 class FaultState(Exception):
@@ -64,6 +79,12 @@ class FaultState(Exception):
                 pub.Pub().pub("openWB/set/" + topic + "/" + str(component_info.id) + "/get/fault_str", self.fault_str)
                 pub.Pub().pub(
                     "openWB/set/" + topic + "/" + str(component_info.id) + "/get/fault_state", self.fault_state.value)
+                if component_info.parent_hostname and component_info.parent_hostname != component_info.hostname:
+                    pub.pub_single("openWB/set/" + topic + "/" + str(component_info.parent_id) +
+                                   "/get/fault_str", self.fault_str, hostname=component_info.parent_hostname)
+                    pub.pub_single(
+                        "openWB/set/" + topic + "/" + str(component_info.parent_id) + "/get/fault_state",
+                        self.fault_state.value, hostname=component_info.parent_hostname)
         except Exception:
             log.exception("Fehler im Modul fault_state")
 
@@ -77,7 +98,7 @@ class FaultState(Exception):
 
     @staticmethod
     def no_error() -> "FaultState":
-        return FaultState("Kein Fehler.", FaultStateLevel.NO_ERROR)
+        return FaultState(NO_ERROR, FaultStateLevel.NO_ERROR)
 
     @staticmethod
     def from_exception(exception: Optional[Exception] = None) -> "FaultState":

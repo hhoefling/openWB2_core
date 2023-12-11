@@ -4,6 +4,7 @@ import logging
 from typing import Union
 import asyncio
 import json
+from modules.common.component_state import CarState
 from modules.common.store import RAMDISK_PATH
 from modules.vehicles.smarteq.config import SmartEQ
 # import requests
@@ -108,10 +109,10 @@ class Api:
         pickle.dump(self.store, tf)
         tf.close()
         try:
-            os.chmod(self.storeFile, 0o777)
+            os.chmod(self.storeFile, 0o666)
         except Exception:
             log.exception("chmod_store")
-            os.system("sudo chmod 0777 " + self.storeFile)
+            os.system("sudo chmod 0666 " + self.storeFile)
 
     # ===== get resume string ======
     def get_resume(self) -> str:
@@ -130,7 +131,6 @@ class Api:
 
         try:
             response = self.session.get(url, headers=headers, verify=SSL_VERIFY_AUTH)
-
             soup = bs4.BeautifulSoup(response.text, 'html.parser')
 
             for cd in soup.findAll(text=True):
@@ -224,7 +224,6 @@ class Api:
 
         try:
             response = self.session.post(url, headers=headers, data=data, verify=SSL_VERIFY_AUTH)
-
             Tokens = json.loads(response.text)
             if not Tokens['access_token']:
                 self.log.warn("get_tokens: no access_token found")
@@ -425,7 +424,7 @@ class Api:
         return soc, range
 
 
-def fetch_soc(conf: SmartEQ, vehicle: int) -> Union[int, float]:
+def fetch_soc(conf: SmartEQ, vehicle: int) -> CarState:
 
     # prepare and call async method
     loop = asyncio.new_event_loop()
@@ -435,4 +434,4 @@ def fetch_soc(conf: SmartEQ, vehicle: int) -> Union[int, float]:
     a = Api(vehicle)
     soc, range = loop.run_until_complete(a._fetch_soc(conf, vehicle))
 
-    return soc, range
+    return CarState(soc, range)

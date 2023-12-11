@@ -5,10 +5,13 @@ Instanzen gelöscht werden können, der Zugriff aber nicht verändert werden mus
 import copy
 import logging
 import threading
+from functools import wraps
 from typing import Dict
 from control.bat import Bat
 from control.bat_all import BatAll
-from control.chargepoint import AllChargepoints, Chargepoint, CpTemplate
+from control.chargepoint.chargepoint import Chargepoint
+from control.chargepoint.chargepoint_all import AllChargepoints
+from control.chargepoint.chargepoint_template import CpTemplate
 from control.pv import Pv
 from control.pv_all import PvAll
 
@@ -23,13 +26,41 @@ from control.optional import Optional
 from modules.common.abstract_device import AbstractDevice
 
 log = logging.getLogger(__name__)
+bat_data_lock = threading.Lock()
+bat_all_data_lock = threading.Lock()
+graph_data_lock = threading.Lock()
+counter_data_lock = threading.Lock()
+counter_all_data_lock = threading.Lock()
+cp_data_lock = threading.Lock()
+cp_all_data_lock = threading.Lock()
+cp_template_data_lock = threading.Lock()
+ev_charge_template_data_lock = threading.Lock()
+ev_data_lock = threading.Lock()
+ev_template_data_lock = threading.Lock()
+general_data_lock = threading.Lock()
+optional_data_lock = threading.Lock()
+pv_data_lock = threading.Lock()
+pv_all_data_lock = threading.Lock()
+system_data_lock = threading.Lock()
+
+
+def locked(lock: threading.Lock):
+    def decorate(method):
+        @wraps(method)
+        def inner(*args, **kwargs):
+            # context handler may be used if no logging of lock duration required: "with lock:..."
+            try:
+                lock.acquire()
+                return method(*args, **kwargs)
+            finally:
+                lock.release()
+        return inner
+    return decorate
 
 
 class Data:
     def __init__(self, event_module_update_completed: threading.Event):
         self.event_module_update_completed = event_module_update_completed
-        self.event = threading.Event()
-        self.event.set()
         self._bat_data: Dict[str, Bat] = {}
         self._bat_all_data = BatAll()
         self._counter_data: Dict[str, Counter] = {}
@@ -50,255 +81,155 @@ class Data:
     # getter-Funktion, der Zugriff erfolgt wie bei einem Zugriff auf eine öffentliche Variable.
     @property
     def bat_data(self) -> Dict[str, Bat]:
-        """ gibt die Variable zurück. Durch das Event wird verhindert, das gleichzeitig geschrieben und gelesen wird.
-
-        Return
-        ------
-        temp: Variable
-        """
-        self.event.wait()
-        self.event.clear()
-        temp = self._bat_data
-        self.event.set()
-        return temp
+        """ gibt die Variable zurück. """
+        return self._bat_data
 
     @bat_data.setter
+    @locked(bat_data_lock)
     def bat_data(self, value):
-        """ setzt die Variable. Durch das Event wird verhindert, das gleichzeitig geschrieben und gelesen wird.
+        """ setzt die Variable. Durch das Lock wird verhindert, dass gleichzeitig geschrieben wird.
 
         Parameter
         ---------
         value: Wert, der gesetzt werden soll.
         """
-        self.event.wait()
-        self.event.clear()
         self._bat_data = value
-        self.event.set()
 
     @property
     def bat_all_data(self) -> BatAll:
-        self.event.wait()
-        self.event.clear()
-        temp = self._bat_all_data
-        self.event.set()
-        return temp
+        return self._bat_all_data
 
     @bat_all_data.setter
+    @locked(bat_all_data_lock)
     def bat_all_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._bat_all_data = value
-        self.event.set()
 
     @property
     def graph_data(self) -> Graph:
-        self.event.wait()
-        self.event.clear()
-        temp = self._graph_data
-        self.event.set()
-        return temp
+        return self._graph_data
 
     @graph_data.setter
+    @locked(graph_data_lock)
     def graph_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._graph_data = value
-        self.event.set()
 
     @property
     def counter_data(self) -> Dict[str, Counter]:
-        self.event.wait()
-        self.event.clear()
-        temp = self._counter_data
-        self.event.set()
-        return temp
+        return self._counter_data
 
     @counter_data.setter
+    @locked(counter_data_lock)
     def counter_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._counter_data = value
-        self.event.set()
 
     @property
     def counter_all_data(self) -> CounterAll:
-        self.event.wait()
-        self.event.clear()
-        temp = self._counter_all_data
-        self.event.set()
-        return temp
+        return self._counter_all_data
 
     @counter_all_data.setter
+    @locked(counter_all_data_lock)
     def counter_all_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._counter_all_data = value
-        self.event.set()
 
     @property
     def cp_data(self) -> Dict[str, Chargepoint]:
-        self.event.wait()
-        self.event.clear()
-        temp = self._cp_data
-        self.event.set()
-        return temp
+        return self._cp_data
 
     @cp_data.setter
+    @locked(cp_data_lock)
     def cp_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._cp_data = value
-        self.event.set()
 
     @property
     def cp_all_data(self) -> AllChargepoints:
-        self.event.wait()
-        self.event.clear()
-        temp = self._cp_all_data
-        self.event.set()
-        return temp
+        return self._cp_all_data
 
     @cp_all_data.setter
+    @locked(cp_all_data_lock)
     def cp_all_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._cp_all_data = value
-        self.event.set()
 
     @property
     def cp_template_data(self):
-        self.event.wait()
-        self.event.clear()
-        temp = self._cp_template_data
-        self.event.set()
-        return temp
+        return self._cp_template_data
 
     @cp_template_data.setter
+    @locked(cp_template_data_lock)
     def cp_template_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._cp_template_data = value
-        self.event.set()
 
     @property
     def ev_charge_template_data(self) -> Dict[str, ChargeTemplate]:
-        self.event.wait()
-        self.event.clear()
-        temp = self._ev_charge_template_data
-        self.event.set()
-        return temp
+        return self._ev_charge_template_data
 
     @ev_charge_template_data.setter
+    @locked(ev_charge_template_data_lock)
     def ev_charge_template_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._ev_charge_template_data = value
-        self.event.set()
 
     @property
+    @locked(ev_data_lock)
     def ev_data(self) -> Dict[str, Ev]:
-        self.event.wait()
-        self.event.clear()
-        temp = self._ev_data
-        self.event.set()
-        return temp
+        return self._ev_data
 
     @ev_data.setter
+    @locked(ev_data_lock)
     def ev_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._ev_data = value
-        self.event.set()
 
     @property
     def ev_template_data(self) -> Dict[str, EvTemplate]:
-        self.event.wait()
-        self.event.clear()
-        temp = self._ev_template_data
-        self.event.set()
-        return temp
+        return self._ev_template_data
 
     @ev_template_data .setter
+    @locked(ev_template_data_lock)
     def ev_template_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._ev_template_data = value
-        self.event.set()
 
     @property
     def general_data(self) -> General:
-        self.event.wait()
-        self.event.clear()
-        temp = self._general_data
-        self.event.set()
-        return temp
+        return self._general_data
 
     @general_data.setter
+    @locked(general_data_lock)
     def general_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._general_data = value
-        self.event.set()
 
     @property
     def optional_data(self) -> Optional:
-        self.event.wait()
-        self.event.clear()
-        temp = self._optional_data
-        self.event.set()
-        return temp
+        return self._optional_data
 
     @optional_data.setter
+    @locked(optional_data_lock)
     def optional_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._optional_data = value
-        self.event.set()
 
     @property
     def pv_data(self) -> Dict[str, Pv]:
-        self.event.wait()
-        self.event.clear()
-        temp = self._pv_data
-        self.event.set()
-        return temp
+        return self._pv_data
 
     @pv_data.setter
+    @locked(pv_data_lock)
     def pv_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._pv_data = value
-        self.event.set()
 
     @property
     def pv_all_data(self) -> PvAll:
-        self.event.wait()
-        self.event.clear()
-        temp = self._pv_all_data
-        self.event.set()
-        return temp
+        return self._pv_all_data
 
     @pv_all_data.setter
+    @locked(pv_all_data_lock)
     def pv_all_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._pv_all_data = value
-        self.event.set()
 
     @property
     def system_data(self):
-        self.event.wait()
-        self.event.clear()
-        temp = self._system_data
-        self.event.set()
-        return temp
+        return self._system_data
 
     @system_data.setter
+    @locked(system_data_lock)
     def system_data(self, value):
-        self.event.wait()
-        self.event.clear()
         self._system_data = value
-        self.event.set()
 
     def print_all(self):
         self._print_dictionaries(self._bat_data)
@@ -312,6 +243,7 @@ class Data:
         self._print_dictionaries(self._ev_data)
         self._print_dictionaries(self._ev_template_data)
         log.info(f"general_data\n{self._general_data.data}")
+        log.info(f"general_data-display\n{self._general_data.data.extern_display_mode}")
         log.info(f"graph_data\n{self._graph_data.data}")
         log.info(f"optional_data\n{self._optional_data.data}")
         self._print_dictionaries(self._pv_data)
@@ -359,7 +291,7 @@ class Data:
         """
         try:
             # Workaround, da mit Python3.9/pymodbus2.5 eine pymodbus-Instanz nicht mehr kopiert werden kann.
-            # Bei einer Neukonfiguration eines Device/Komponente wird dieses Neuinitialisiert. Nur bei Komponenten
+            # Bei einer Neukonfiguration eines Device/Komponente wird dieses neu initialisiert. Nur bei Komponenten
             # mit simcount werden Werte aktualisiert, diese sollten jedoch nur einmal nach dem Auslesen aktualisiert
             # werden, sodass die Nutzung einer Referenz vorerst funktioniert.
             self.system_data = {
@@ -391,7 +323,19 @@ class Data:
     def __copy_cp_data(self) -> None:
         self.cp_data.clear()
         for cp in SubData.cp_data:
-            self.cp_data[cp] = copy.deepcopy(SubData.cp_data[cp].chargepoint)
+            # Workaround, da mit Python3.9/pymodbus2.5 eine pymodbus-Instanz nicht mehr kopiert werden kann.
+            # Bei einer Neukonfiguration eines Device/Komponente wird dieses neu initialisiert. Nur bei Komponenten
+            # mit simcount werden Werte aktualisiert, diese sollten jedoch nur einmal nach dem Auslesen aktualisiert
+            # werden, sodass die Nutzung einer Referenz vorerst funktioniert.
+            # Verwendung der Referenz führt bei der Pro zu Instabilität.
+            try:
+                self.cp_data[cp] = copy.deepcopy(SubData.cp_data[cp].chargepoint)
+            except TypeError:
+                self.cp_data[cp] = Chargepoint(SubData.cp_data[cp].chargepoint.num, None)
+                self.cp_data[cp].template = copy.deepcopy(SubData.cp_data[cp].chargepoint.template)
+                self.cp_data[cp].set_current_prev = copy.deepcopy(SubData.cp_data[cp].chargepoint.set_current_prev)
+                self.cp_data[cp].data = copy.deepcopy(SubData.cp_data[cp].chargepoint.data)
+                self.cp_data[cp].chargepoint_module = SubData.cp_data[cp].chargepoint.chargepoint_module
         self.cp_all_data = copy.deepcopy(SubData.cp_all_data)
         self.cp_template_data = copy.deepcopy(SubData.cp_template_data)
         for chargepoint in self.cp_data:
@@ -468,7 +412,7 @@ class Data:
             try:
                 self.ev_data[vehicle].charge_template = self.ev_charge_template_data["ct" + str(
                     self.ev_data[vehicle].data.charge_template)]
-                # zuerst das aktuelle Template laden
+                # zuerst das aktuelle Profil laden
                 self.ev_data[vehicle].ev_template = self.ev_template_data["et" + str(
                     self.ev_data[vehicle].data.ev_template)]
             except Exception:
