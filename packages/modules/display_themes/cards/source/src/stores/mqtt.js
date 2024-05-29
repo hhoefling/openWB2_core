@@ -44,7 +44,7 @@ export const useMqttStore = defineStore("mqtt", {
         });
         myTopics.forEach((topic, index, array) => {
           array[index] = parseInt(
-            topic.match(/(?:\/)([0-9]+)(?=\/)*/g)[0].replace(/[^0-9]+/g, "")
+            topic.match(/(?:\/)([0-9]+)(?=\/)*/g)[0].replace(/[^0-9]+/g, ""),
           );
         });
         return myTopics;
@@ -111,7 +111,7 @@ export const useMqttStore = defineStore("mqtt", {
         scale = true,
         inverted = false,
         defaultString = "---",
-        topicElement = undefined
+        topicElement = undefined,
       ) => {
         var scaled = false;
         var value = state.topics[topic];
@@ -246,12 +246,12 @@ export const useMqttStore = defineStore("mqtt", {
       let hierarchy = state.topics["openWB/counter/get/hierarchy"];
       if (hierarchy !== undefined && Object.keys(hierarchy).length > 0) {
         let index = Object.keys(
-          state.topics["openWB/counter/get/hierarchy"]
+          state.topics["openWB/counter/get/hierarchy"],
         )[0];
         console.debug(
           "getGridId",
           index,
-          state.topics["openWB/counter/get/hierarchy"][index]
+          state.topics["openWB/counter/get/hierarchy"][index],
         );
         if (
           state.topics["openWB/counter/get/hierarchy"][index].type == "counter"
@@ -322,7 +322,7 @@ export const useMqttStore = defineStore("mqtt", {
       if (filter.length > 0) {
         console.debug("charge points are filtered!", chargePoints, filter);
         return chargePoints.filter((chargePoint) =>
-          filter.includes(chargePoint)
+          filter.includes(chargePoint),
         );
       }
       return chargePoints;
@@ -343,7 +343,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         return state.getValueString(
           `openWB/chargepoint/${chargePointId}/get/power`,
-          "W"
+          "W",
         );
       };
     },
@@ -357,7 +357,7 @@ export const useMqttStore = defineStore("mqtt", {
             true,
             false,
             "---",
-            "imported_since_plugged"
+            "imported_since_plugged",
           ),
           range: state.getValueString(
             `openWB/chargepoint/${chargePointId}/set/log`,
@@ -366,7 +366,7 @@ export const useMqttStore = defineStore("mqtt", {
             false,
             false,
             "---",
-            "range_charged"
+            "range_charged",
           ),
         };
       };
@@ -374,7 +374,7 @@ export const useMqttStore = defineStore("mqtt", {
     getChargePointPowerChartData(state) {
       return (chargePointId) => {
         return state.getChartData(
-          `openWB/chargepoint/${chargePointId}/get/power`
+          `openWB/chargepoint/${chargePointId}/get/power`,
         );
       };
     },
@@ -382,7 +382,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         return state.getValueString(
           `openWB/chargepoint/${chargePointId}/set/current`,
-          "A"
+          "A",
         );
       };
     },
@@ -404,7 +404,7 @@ export const useMqttStore = defineStore("mqtt", {
         }
         console.warn(
           "topic not found!",
-          `openWB/chargepoint/${chargePointId}/get/phases_in_use`
+          `openWB/chargepoint/${chargePointId}/get/phases_in_use`,
         );
         return "?";
       };
@@ -412,49 +412,42 @@ export const useMqttStore = defineStore("mqtt", {
     getChargePointPlugState(state) {
       return (chargePointId) => {
         return state.getValueBool(
-          `openWB/chargepoint/${chargePointId}/get/plug_state`
+          `openWB/chargepoint/${chargePointId}/get/plug_state`,
         );
       };
     },
     getChargePointChargeState(state) {
       return (chargePointId) => {
         return state.getValueBool(
-          `openWB/chargepoint/${chargePointId}/get/charge_state`
+          `openWB/chargepoint/${chargePointId}/get/charge_state`,
         );
       };
     },
     getChargePointManualLock(state) {
       return (chargePointId) => {
         return state.getValueBool(
-          `openWB/chargepoint/${chargePointId}/set/manual_lock`
+          `openWB/chargepoint/${chargePointId}/set/manual_lock`,
         );
       };
     },
     getChargepointTagState(state) {
       return (chargePointId) => {
-        let tagState = 0;
         if (
-          state.topics[
-            `openWB/chargepoint/${chargePointId}/set/rfid`
-          ] !== null &&
-          state.topics[
-            `openWB/chargepoint/${chargePointId}/set/rfid`
-          ] !== ""
+          ![undefined, null, ""].includes(
+            state.topics[`openWB/chargepoint/${chargePointId}/set/rfid`],
+          )
         ) {
-          tagState = 2;
+          return 2;
         } else {
           if (
-            state.topics[
-              `openWB/chargepoint/${chargePointId}/get/rfid`
-            ] !== null &&
-            state.topics[
-              `openWB/chargepoint/${chargePointId}/get/rfid`
-            ] !== ""
+            ![undefined, null, ""].includes(
+              state.topics[`openWB/chargepoint/${chargePointId}/get/rfid`],
+            )
           ) {
-            tagState = 1;
+            return 1;
           }
         }
-        return tagState;
+        return 0;
       };
     },
     getChargePointVehicleChangePermitted(state) {
@@ -463,7 +456,7 @@ export const useMqttStore = defineStore("mqtt", {
           Array.isArray(
             state.topics[
               `openWB/chargepoint/${chargePointId}/set/change_ev_permitted`
-            ]
+            ],
           )
         ) {
           // topic payload is an array [bool, String]!
@@ -485,7 +478,8 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.translateChargeMode(
-            state.getChargePointConnectedVehicleChargeTemplate(chargePointId).chargemode.selected
+            state.getChargePointConnectedVehicleChargeTemplate(chargePointId)
+              .chargemode.selected,
           );
         }
         return undefined;
@@ -494,8 +488,9 @@ export const useMqttStore = defineStore("mqtt", {
     getChargePointConnectedVehiclePriority(state) {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
-          return state.getChargePointConnectedVehicleChargeTemplate(chargePointId)
-            .prio;
+          return state.getChargePointConnectedVehicleChargeTemplate(
+            chargePointId,
+          ).prio;
         }
         return undefined;
       };
@@ -528,7 +523,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         let chargeTemplateId =
           state.getChargePointConnectedVehicleChargeTemplateIndex(
-            chargePointId
+            chargePointId,
           );
         return state.topics[
           `openWB/vehicle/template/charge_template/${chargeTemplateId}`
@@ -569,7 +564,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.getChargePointConnectedVehicleChargeTemplate(
-            chargePointId
+            chargePointId,
           ).time_charging.active;
         }
         return undefined;
@@ -579,7 +574,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         let running =
           state.getChargePointConnectedVehicleConfig(
-            chargePointId
+            chargePointId,
           ).time_charging_in_use;
         if (running !== undefined) {
           return running;
@@ -591,7 +586,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.getChargePointConnectedVehicleChargeTemplate(
-            chargePointId
+            chargePointId,
           ).chargemode.instant_charging.current;
         }
         return undefined;
@@ -601,7 +596,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.getChargePointConnectedVehicleChargeTemplate(
-            chargePointId
+            chargePointId,
           ).chargemode.instant_charging.limit;
         }
         return { selected: undefined };
@@ -611,7 +606,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.getChargePointConnectedVehicleChargeTemplate(
-            chargePointId
+            chargePointId,
           ).chargemode.pv_charging.feed_in_limit;
         }
         return undefined;
@@ -621,7 +616,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.getChargePointConnectedVehicleChargeTemplate(
-            chargePointId
+            chargePointId,
           ).chargemode.pv_charging.min_current;
         }
         return undefined;
@@ -631,7 +626,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.getChargePointConnectedVehicleChargeTemplate(
-            chargePointId
+            chargePointId,
           ).chargemode.pv_charging.min_soc;
         }
         return undefined;
@@ -641,7 +636,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.getChargePointConnectedVehicleChargeTemplate(
-            chargePointId
+            chargePointId,
           ).chargemode.pv_charging.min_soc_current;
         }
         return undefined;
@@ -651,7 +646,7 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         if (state.getChargePointConnectedVehicleChargeTemplate(chargePointId)) {
           return state.getChargePointConnectedVehicleChargeTemplate(
-            chargePointId
+            chargePointId,
           ).chargemode.pv_charging.max_soc;
         }
         return undefined;
@@ -661,10 +656,10 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         let chargeTemplateId =
           state.getChargePointConnectedVehicleChargeTemplateIndex(
-            chargePointId
+            chargePointId,
           );
         return state.getWildcardTopics(
-          `openWB/vehicle/template/charge_template/${chargeTemplateId}/chargemode/scheduled_charging/plans/+`
+          `openWB/vehicle/template/charge_template/${chargeTemplateId}/chargemode/scheduled_charging/plans/+`,
         );
       };
     },
@@ -672,10 +667,10 @@ export const useMqttStore = defineStore("mqtt", {
       return (chargePointId) => {
         let chargeTemplateId =
           state.getChargePointConnectedVehicleChargeTemplateIndex(
-            chargePointId
+            chargePointId,
           );
         return state.getWildcardTopics(
-          `openWB/vehicle/template/charge_template/${chargeTemplateId}/time_charging/plans/+`
+          `openWB/vehicle/template/charge_template/${chargeTemplateId}/time_charging/plans/+`,
         );
       };
     },
@@ -738,7 +733,7 @@ export const useMqttStore = defineStore("mqtt", {
     getSystemTime(state) {
       if (state.topics["openWB/system/time"]) {
         return new Date(
-          state.topics["openWB/system/time"] * 1000
+          state.topics["openWB/system/time"] * 1000,
         ).toLocaleString();
       }
       return undefined;
@@ -751,8 +746,7 @@ export const useMqttStore = defineStore("mqtt", {
     },
 
     /* rfid */
-
-    getRfidEnabled(state) {
+    getRfidEnabled() {
       return this.getValueBool("openWB/optional/rfid/active");
     },
   },
@@ -802,7 +796,7 @@ export const useMqttStore = defineStore("mqtt", {
           .reduce(
             (o, p, i) =>
               (o[p] = path.split(".").length === ++i ? value : o[p] || {}),
-            object
+            object,
           );
 
       if (topic in this.topics) {
@@ -882,7 +876,7 @@ export const useMqttStore = defineStore("mqtt", {
     },
     formatDate(
       dateString,
-      format = { year: "numeric", month: "2-digit", day: "2-digit" }
+      format = { year: "numeric", month: "2-digit", day: "2-digit" },
     ) {
       let date = new Date(dateString);
       return date.toLocaleDateString(undefined, format);
@@ -903,7 +897,7 @@ export const useMqttStore = defineStore("mqtt", {
       }
       return `${this.formatDate(
         dateArray[0],
-        beginFormat
+        beginFormat,
       )}${separator}${this.formatDate(dateArray[1], endFormat)}`;
     },
     formatWeeklyScheduleDays(weekDays) {
