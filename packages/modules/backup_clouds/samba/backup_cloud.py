@@ -4,11 +4,13 @@ import os
 import io
 import re
 import socket
-from smb.SMBConnection import SMBConnection
+
+from helpermodules.utils.error_handling import ImportErrorContext
+with ImportErrorContext():
+    from smb.SMBConnection import SMBConnection
 
 from modules.backup_clouds.samba.config import SambaBackupCloud, SambaBackupCloudConfiguration
 from modules.common.abstract_device import DeviceDescriptor
-from modules.common.configurable_backup_cloud import ConfigurableBackupCloud
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +59,7 @@ def upload_backup(config: SambaBackupCloudConfiguration, backup_filename: str, b
 def create_backup_cloud(config: SambaBackupCloud):
     def updater(backup_filename: str, backup_file: bytes):
         upload_backup(config.configuration, backup_filename, backup_file)
-    return ConfigurableBackupCloud(config=config, component_updater=updater)
+    return updater
 
 
 device_descriptor = DeviceDescriptor(configuration_factory=SambaBackupCloud)

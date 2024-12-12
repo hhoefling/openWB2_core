@@ -7,7 +7,9 @@
 			<span>Fahrzeuge</span>
 		</template>
 		<div
-			v-for="(vehicle, index) in Object.values(vehicles).slice().reverse()"
+			v-for="(vehicle, index) in Object.values(vehicles).filter(
+				(v) => v.visible,
+			)"
 			:key="index"
 			class="subgrid"
 		>
@@ -34,7 +36,7 @@ import { vehicles } from '@/components/chargePointList/model'
 	font-weight: normal;
 }
 
-.tempbadge {
+.tempWbBadge {
 	background-color: var(--color-battery);
 	color: var(--color-bg);
 	font-size: var(--font-verysmall);

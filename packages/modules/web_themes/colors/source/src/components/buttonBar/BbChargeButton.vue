@@ -54,7 +54,8 @@ Hagen */
 
 <script setup lang="ts">
 import { globalData } from '@/assets/js/model'
-import { ChargePoint, ChargeMode } from '@/components/chargePointList/model'
+import { ChargePoint } from '@/components/chargePointList/model'
+import { ChargeMode } from '@/assets/js/types'
 import { chargemodes } from '@/assets/js/themeConfig'
 import { computed } from 'vue'
 import { formatWatt } from '@/assets/js/helpers'
@@ -132,10 +133,16 @@ const modeIcon = computed(() => {
 	}
 })
 const priorityIcon = computed(() => {
-	if (globalData.pvBatteryPriority) {
-		return 'fa-car-battery'
-	} else {
-		return 'fa-car'
+	switch (globalData.pvBatteryPriority) {
+		case 'ev_mode':
+			return 'fa-car'
+		case 'bat_mode':
+			return 'fa-car-battery'
+		case 'min_soc_bat_mode':
+			return 'fa-battery-half'
+		default:
+			console.log('default')
+			return ''
 	}
 })
 const plugPillClass = computed(() => {

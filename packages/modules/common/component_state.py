@@ -148,6 +148,10 @@ class ChargepointState:
                  imported: float = 0,
                  exported: float = 0,
                  power: float = 0,
+                 serial_number: str = "",
+                 charging_current: Optional[float] = 0,
+                 charging_voltage: Optional[float] = 0,
+                 charging_power: Optional[float] = 0,
                  powers: Optional[List[Optional[float]]] = None,
                  voltages: Optional[List[Optional[float]]] = None,
                  currents: Optional[List[Optional[float]]] = None,
@@ -166,6 +170,7 @@ class ChargepointState:
         self.imported = imported
         self.exported = exported
         self.power = power
+        self.serial_number = serial_number
         self.phases_in_use = phases_in_use
         self.charge_state = charge_state
         self.plug_state = plug_state
@@ -176,6 +181,9 @@ class ChargepointState:
             self.rfid_timestamp = rfid_timestamp
         if _check_none(power_factors):
             power_factors = [0.0]*3
+        self.charging_current = charging_current
+        self.charging_power = charging_power
+        self.charging_voltage = charging_voltage
         self.power_factors = power_factors
         self.soc = soc
         self.soc_timestamp = soc_timestamp
@@ -190,6 +198,7 @@ class TariffState:
         self.prices = prices
 
 
+@auto_str
 class RcrState:
     def __init__(self, override_value: float) -> None:
         self.override_value = override_value

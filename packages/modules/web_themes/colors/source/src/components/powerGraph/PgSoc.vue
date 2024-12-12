@@ -1,5 +1,7 @@
 <template>
 	<path
+		:id="'soc-' + vID"
+		.origin="autozoom"
 		class="soc-baseline"
 		:d="myline"
 		stroke="var(--color-bg)"
@@ -7,6 +9,7 @@
 		fill="none"
 	/>
 	<path
+		:id="'socdashes-' + vID"
 		class="soc-dashes"
 		:d="myline"
 		:stroke="cpColor"
@@ -21,15 +24,22 @@
 		:style="{ fill: cpColor, fontSize: 10 }"
 		:text-anchor="textPosition"
 	>
-		{{ cpName }}
+		{{ vName }}
 	</text>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { extent, scaleLinear, scaleTime, line } from 'd3'
-import { chargePoints } from '../chargePointList/model'
-import { graphData, type GraphDataItem } from './model'
+import {
+	extent,
+	scaleLinear,
+	scaleTime,
+	line,
+	type Selection,
+	select,
+} from 'd3'
+import { topVehicles, vehicles } from '../chargePointList/model'
+import { graphData, type GraphDataItem, zoomedRange } from './model'
 
 const props = defineProps<{
 	width: number
@@ -37,7 +47,6 @@ const props = defineProps<{
 	margin: { left: number; top: number; right: number; bottom: number }
 	order: number // 0, 1 or 2 (2 == battery)
 }>()
-// const evs = computed(() => Object.values(vehicles))
 const xScale = computed(() => {
 	let e = extent(graphData.data, (d) => d.date)
 	if (e[0] && e[1]) {
@@ -57,20 +66,39 @@ const myline = computed(() => {
 		.y(
 			(d) =>
 				yScale.value(
-					props.order == 2 ? d.batSoc : d['soc' + cp.value.connectedVehicle],
+					props.order == 2
+						? d.batSoc
+						: props.order == 0
+							? d['soc' + topVehicles.value[0]]
+							: d['soc' + topVehicles.value[1]!],
 				) ?? yScale.value(0),
 		)
 
 	let p = path(graphData.data)
 	return p ? p : ''
 })
-const cpName = computed(() => {
-	if (props.order == 2) {
-		return 'Speicher'
-	} else {
-		return cp.value.vehicleName
+const vID = computed(() => {
+	return props.order
+})
+const vName = computed(() => {
+	switch (props.order) {
+		case 2:
+			return 'Speicher'
+		case 1:
+			if (vehicles[topVehicles.value[1]]) {
+				return vehicles[topVehicles.value[1]].name
+			} else {
+				return 'oops'
+			}
+		default:
+			if (vehicles[topVehicles.value[0]]) {
+				return vehicles[topVehicles.value[0]].name
+			} else {
+				return 'hhhm'
+			}
 	}
 })
+
 const cpColor = computed(() => {
 	switch (props.order) {
 		case 0:
@@ -85,9 +113,9 @@ const cpColor = computed(() => {
 })
 const nameX = computed(() => {
 	switch (props.order) {
-		case 0:
-			return props.width - 3
 		case 1:
+			return props.width - 3
+		case 0:
 			return 3
 		case 2:
 			return props.width / 2
@@ -95,10 +123,7 @@ const nameX = computed(() => {
 			return 0 // error
 	}
 })
-const cp = computed(() => {
-	const idx = props.order == 2 ? 0 : props.order
-	return Object.values(chargePoints)[idx]
-})
+
 const nameY = computed(() => {
 	if (graphData.data.length > 0) {
 		let index: number
@@ -106,12 +131,12 @@ const nameY = computed(() => {
 			case 0:
 				index = graphData.data.length - 1
 				return yScale.value(
-					graphData.data[index]['soc' + cp.value.connectedVehicle] + 2,
+					graphData.data[index]['soc' + topVehicles.value[0]] + 2,
 				)
 			case 1:
 				index = 0
 				return yScale.value(
-					graphData.data[index]['soc' + cp.value.connectedVehicle] + 2,
+					graphData.data[index]['soc' + topVehicles.value[1]] + 2,
 				)
 			case 2:
 				index = Math.round(graphData.data.length / 2)
@@ -134,6 +159,31 @@ const textPosition = computed(() => {
 		default:
 			return 'middle'
 	}
+})
+
+const autozoom = computed(() => {
+	if (graphData.graphMode != 'month' && graphData.graphMode != 'year') {
+		const path1: Selection<SVGPathElement, unknown, HTMLElement, unknown> =
+			select('path#soc-' + vID.value)
+		const path2: Selection<SVGPathElement, unknown, HTMLElement, unknown> =
+			select('path#socdashes-' + vID.value)
+		xScale.value.range(zoomedRange.value)
+		const path = line<GraphDataItem>()
+			.x((d) => xScale.value(d.date))
+			.y(
+				(d) =>
+					yScale.value(
+						props.order == 2
+							? d.batSoc
+							: props.order == 1
+								? d['soc' + topVehicles.value[0]]
+								: d['soc' + topVehicles.value[1]!],
+					) ?? yScale.value(0),
+			)
+		path1.attr('d', path(graphData.data))
+		path2.attr('d', path(graphData.data))
+	}
+	return 'zoomed'
 })
 </script>
 <style scoped></style>

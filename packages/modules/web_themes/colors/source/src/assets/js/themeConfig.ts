@@ -6,10 +6,14 @@
 
 import { computed, reactive } from 'vue'
 import { select } from 'd3'
-import type { ChargeModeInfo } from './types'
+import { ChargeMode, type ChargeModeInfo } from './types'
 import { addShDevice, shDevices } from '@/components/smartHome/model'
-import { ChargeMode } from '@/components/chargePointList/model'
 import { sourceSummary } from './model'
+import {
+	sourceGraphIsNotInitialized,
+	usageGraphIsNotInitialized,
+} from '@/components/powerGraph/model'
+import { updateServer } from './sendMessages'
 export class Config {
 	private _showRelativeArcs = false
 	showTodayGraph = true
@@ -30,8 +34,13 @@ export class Config {
 	private _showButtonBar = true
 	private _showCounters = false
 	private _showVehicles = false
+	private _showStandardVehicle = true
 	private _showPrices = false
+	private _showInverters = false
+	private _alternativeEnergy = false
 	private _debug: boolean = false
+	private _lowerPriceBound = 0
+	private _upperPriceBound = 0
 	isEtEnabled: boolean = false
 	etPrice: number = 20.5
 	showRightButton = true
@@ -40,6 +49,7 @@ export class Config {
 	animationDuration = 300
 	animationDelay = 100
 	zoomGraph = false
+	zoomedWidget = 1
 	constructor() {}
 	get showRelativeArcs() {
 		return this._showRelativeArcs
@@ -233,6 +243,16 @@ export class Config {
 	setShowVehicles(show: boolean) {
 		this._showVehicles = show
 	}
+	get showStandardVehicle() {
+		return this._showStandardVehicle
+	}
+	set showStandardVehicle(show: boolean) {
+		this._showStandardVehicle = show
+		savePrefs()
+	}
+	setShowStandardVehicle(show: boolean) {
+		this._showStandardVehicle = show
+	}
 	get showPrices() {
 		return this._showPrices
 	}
@@ -243,7 +263,52 @@ export class Config {
 	setShowPrices(show: boolean) {
 		this._showPrices = show
 	}
+	get showInverters() {
+		return this._showInverters
+	}
+	set showInverters(show: boolean) {
+		this._showInverters = show
+		sourceGraphIsNotInitialized()
+		usageGraphIsNotInitialized()
+		savePrefs()
+	}
+	setShowInverters(show: boolean) {
+		this._showInverters = show
+	}
+	get alternativeEnergy() {
+		return this._alternativeEnergy
+	}
+	set alternativeEnergy(show: boolean) {
+		this._alternativeEnergy = show
+		sourceGraphIsNotInitialized()
+		usageGraphIsNotInitialized()
+		savePrefs()
+	}
+	setAlternativeEnergy(show: boolean) {
+		this._alternativeEnergy = show
+	}
+	get lowerPriceBound() {
+		return this._lowerPriceBound
+	}
+	set lowerPriceBound(val: number) {
+		this._lowerPriceBound = val
+		savePrefs()
+	}
+	setLowerPriceBound(val: number) {
+		this._lowerPriceBound = val
+	}
+	get upperPriceBound() {
+		return this._upperPriceBound
+	}
+	set upperPriceBound(val: number) {
+		this._upperPriceBound = val
+		savePrefs()
+	}
+	setUpperPriceBound(val: number) {
+		this._upperPriceBound = val
+	}
 }
+
 export const globalConfig = reactive(new Config())
 export function initConfig() {
 	readCookie()
@@ -277,17 +342,11 @@ export const widescreen = computed(() => {
 	return screensize.x >= breakpoint
 })
 export const chargemodes: { [key: string]: ChargeModeInfo } = {
-	stop: {
-		mode: ChargeMode.stop,
-		name: 'Stop',
-		color: 'var(--color-fg)',
-		icon: 'fa-power-off',
-	},
-	standby: {
-		mode: ChargeMode.standby,
-		name: 'Standby',
-		color: 'var(--color-axis',
-		icon: 'fa-pause',
+	instant_charging: {
+		mode: ChargeMode.instant_charging,
+		name: 'Sofort',
+		color: 'var(--color-charging)',
+		icon: 'fa-bolt',
 	},
 	pv_charging: {
 		mode: ChargeMode.pv_charging,
@@ -301,13 +360,43 @@ export const chargemodes: { [key: string]: ChargeModeInfo } = {
 		color: 'var(--color-battery)',
 		icon: 'fa-bullseye',
 	},
-	instant_charging: {
-		mode: ChargeMode.instant_charging,
-		name: 'Sofort',
-		color: 'var(--color-charging)',
-		icon: 'fa-bolt',
+	standby: {
+		mode: ChargeMode.standby,
+		name: 'Standby',
+		color: 'var(--color-axis',
+		icon: 'fa-pause',
+	},
+	stop: {
+		mode: ChargeMode.stop,
+		name: 'Stop',
+		color: 'var(--color-fg)',
+		icon: 'fa-power-off',
 	},
 }
+export class GlobalData {
+	batterySoc = 0
+	isBatteryConfigured = true
+	chargeMode = '0'
+	private _pvBatteryPriority = 'ev_mode' // 'ev_mode' | 'bat_mode' | 'min_soc_bat_mode'
+	displayLiveGraph = true
+	isEtEnabled = true
+	etMaxPrice = 0
+	etCurrentPrice = 0
+	cpDailyExported = 0
+	evuId = 0
+	etProvider = ''
+	get pvBatteryPriority() {
+		return this._pvBatteryPriority
+	}
+	set pvBatteryPriority(prio: string) {
+		this._pvBatteryPriority = prio
+		updateServer('pvBatteryPriority', prio)
+	}
+	updatePvBatteryPriority(prio: string) {
+		this._pvBatteryPriority = prio
+	}
+}
+
 // methods
 export function savePrefs() {
 	writeCookie()
@@ -364,6 +453,8 @@ export const infotext: { [key: string]: string } = {
 		'Durchgehend mit mindestens dem eingestellten Strom laden. Wenn notwendig mit Netzstrom.',
 	pricebased:
 		'Laden bei dynamischem Stromtarif, wenn eingestellter Maximalpreis unterboten wird.',
+	pvpriority:
+		'Ladepriorität bei PV-Produktion. Bevorzung von Fahzeugen, Speicher, oder Fahrzeugen bis zum eingestellten Mindest-Ladestand. Die Einstellung ist für alle Ladepunkte gleich.',
 }
 interface Preferences {
 	hideSH?: number[]
@@ -385,13 +476,18 @@ interface Preferences {
 	showButtonBar?: boolean
 	showCounters?: boolean
 	showVehicles?: boolean
+	showStandardV?: boolean
 	showPrices?: boolean
+	showInv?: boolean
+	altEngy?: boolean
+	lowerP?: number
+	upperP?: number
 	debug?: boolean
 }
 
 function writeCookie() {
 	const prefs: Preferences = {}
-	prefs.hideSH = Object.values(shDevices)
+	prefs.hideSH = [...shDevices.values()]
 		.filter((device) => !device.showInGraph)
 		.map((device) => device.id)
 	prefs.showLG = globalConfig.graphPreference == 'live'
@@ -412,7 +508,12 @@ function writeCookie() {
 	prefs.showButtonBar = globalConfig.showButtonBar
 	prefs.showCounters = globalConfig.showCounters
 	prefs.showVehicles = globalConfig.showVehicles
+	prefs.showStandardV = globalConfig.showStandardVehicle
 	prefs.showPrices = globalConfig.showPrices
+	prefs.showInv = globalConfig.showInverters
+	prefs.altEngy = globalConfig.alternativeEnergy
+	prefs.lowerP = globalConfig.lowerPriceBound
+	prefs.upperP = globalConfig.upperPriceBound
 	prefs.debug = globalConfig.debug
 
 	document.cookie =
@@ -435,11 +536,11 @@ function readCookie() {
 			globalConfig.setSmartHomeColors(prefs.smartHomeC)
 		}
 		if (prefs.hideSH !== undefined) {
-			prefs.hideSH.map((i) => {
-				if (shDevices[i] == undefined) {
+			prefs.hideSH.forEach((i) => {
+				if (shDevices.get(i) == undefined) {
 					addShDevice(i)
 				}
-				shDevices[i].setShowInGraph(false)
+				shDevices.get(i)!.setShowInGraph(false)
 			})
 		}
 		if (prefs.showLG !== undefined) {
@@ -490,8 +591,23 @@ function readCookie() {
 		if (prefs.showVehicles !== undefined) {
 			globalConfig.setShowVehicles(prefs.showVehicles)
 		}
+		if (prefs.showStandardV !== undefined) {
+			globalConfig.setShowStandardVehicle(prefs.showStandardV)
+		}
 		if (prefs.showPrices !== undefined) {
 			globalConfig.setShowPrices(prefs.showPrices)
+		}
+		if (prefs.showInv !== undefined) {
+			globalConfig.setShowInverters(prefs.showInv)
+		}
+		if (prefs.altEngy !== undefined) {
+			globalConfig.setAlternativeEnergy(prefs.altEngy)
+		}
+		if (prefs.lowerP !== undefined) {
+			globalConfig.setLowerPriceBound(prefs.lowerP)
+		}
+		if (prefs.upperP !== undefined) {
+			globalConfig.setUpperPriceBound(prefs.upperP)
 		}
 		if (prefs.debug !== undefined) {
 			globalConfig.setDebug(prefs.debug)

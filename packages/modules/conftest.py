@@ -7,8 +7,6 @@ from modules.common import simcount
 
 sys.modules['pymodbus'] = type(sys)('pymodbus')
 sys.modules['aiohttp'] = type(sys)('aiohttp')
-sys.modules['ipparser'] = type(sys)('ipparser')
-sys.modules['ipparser.ipparser'] = type(sys)('ipparser.ipparser')
 sys.modules['lxml'] = type(sys)('lxml')
 sys.modules['lxml.html'] = type(sys)('lxml.html')
 sys.modules['bs4'] = type(sys)('bs4')
@@ -18,6 +16,8 @@ sys.modules['smb'] = type(sys)('smb')
 sys.modules['skodaconnect'] = type(sys)('skodaconnect')
 sys.modules['skodaconnect.Connection'] = type(sys)('skodaconnect.Connection')
 sys.modules['socketserver'] = type(sys)('socketserver')
+sys.modules['grpc'] = type(sys)('grpc')
+
 
 # sys.modules['telnetlib3'] = type(sys)('telnetlib3')
 

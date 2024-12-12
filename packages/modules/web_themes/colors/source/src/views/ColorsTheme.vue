@@ -15,7 +15,7 @@ Hagen */
 			<PowerMeter />
 			<PowerGraph />
 			<EnergyMeter />
-			<ChargePointList :shortlist="globalConfig.shortCpList == 'always'" />
+			<ChargePointList id="0" :compact="globalConfig.shortCpList == 'always'" />
 			<GlobalPriceChart id="Hidden" />
 			<VehicleList />
 			<CounterList />
@@ -28,7 +28,10 @@ Hagen */
 				<template #item2>
 					<PowerGraph />
 				</template>
-				<template #item3>
+				<template v-if="globalConfig.alternativeEnergy" #item3>
+					<EnergyMeter2 />
+				</template>
+				<template v-else #item3>
 					<EnergyMeter />
 				</template>
 			</CarouselFix>
@@ -39,7 +42,7 @@ Hagen */
 			v-if="!globalConfig.showQuickAccess"
 			class="row py-0 m-0 d-flex justify-content-center"
 		>
-			<ChargePointList :shortlist="globalConfig.shortCpList == 'always'" />
+			<ChargePointList id="1" :compact="globalConfig.shortCpList == 'always'" />
 			<GlobalPriceChart
 				v-if="globalConfig.showPrices"
 				id="NoTabs"
@@ -48,6 +51,7 @@ Hagen */
 			<BatteryList />
 			<SmartHomeList v-if="showSH"></SmartHomeList>
 			<CounterList v-if="globalConfig.showCounters"></CounterList>
+			<InverterList v-if="globalConfig.showInverters"></InverterList>
 		</div>
 		<!-- Tabbed area -->
 		<nav
@@ -112,6 +116,15 @@ Hagen */
 				<i class="fa-solid fa-lg fa-bolt" />
 				<span class="d-none d-md-inline ms-2">Zähler</span>
 			</a>
+			<a
+				v-if="globalConfig.showInverters"
+				class="nav-link"
+				data-bs-toggle="tab"
+				data-bs-target="#inverterlist"
+			>
+				<i class="fa-solid fa-lg fa-solar-panel" />
+				<span class="d-none d-md-inline ms-2">Wechselrichter</span>
+			</a>
 		</nav>
 		<!-- Tab panes -->
 		<div
@@ -126,12 +139,13 @@ Hagen */
 				aria-labelledby="showall-tab"
 			>
 				<div class="row py-0 m-0 d-flex justify-content-center">
-					<ChargePointList :shortlist="globalConfig.shortCpList != 'no'" />
+					<ChargePointList id="2" :compact="globalConfig.shortCpList != 'no'" />
 					<GlobalPriceChart v-if="globalConfig.showPrices" id="Overview" />
 					<VehicleList v-if="globalConfig.showVehicles" />
 					<BatteryList />
 					<SmartHomeList v-if="showSH" />
 					<CounterList v-if="globalConfig.showCounters" />
+					<InverterList v-if="globalConfig.showInverters" />
 				</div>
 			</div>
 			<div
@@ -141,7 +155,10 @@ Hagen */
 				aria-labelledby="chargepoint-tab"
 			>
 				<div class="row py-0 m-0 d-flex justify-content-center">
-					<ChargePointList :shortlist="globalConfig.shortCpList == 'always'" />
+					<ChargePointList
+						id="3"
+						:compact="globalConfig.shortCpList == 'always'"
+					/>
 				</div>
 			</div>
 			<div
@@ -192,6 +209,19 @@ Hagen */
 				</div>
 			</div>
 			<div
+				id="inverterlist"
+				class="tab-pane"
+				role="tabpanel"
+				aria-labelledby="inverter-tab"
+			>
+				<div
+					v-if="globalConfig.showInverters"
+					class="row py-0 m-0 d-flex justify-content-center"
+				>
+					<InverterList />
+				</div>
+			</div>
+			<div
 				id="pricecharttabbed"
 				class="tab-pane"
 				role="tabpanel"
@@ -233,29 +263,31 @@ import { initConfig } from '@/assets/js/themeConfig'
 import PowerMeter from '@/components/powerMeter/PowerMeter.vue'
 import PowerGraph from '@/components/powerGraph/PowerGraph.vue'
 import EnergyMeter from '@/components/energyMeter/EnergyMeter.vue'
+import EnergyMeter2 from '@/components/energyMeter2/EnergyMeter2.vue'
 import ChargePointList from '@/components/chargePointList/ChargePointList.vue'
 import ButtonBar from '@/components/buttonBar/ButtonBar.vue'
 import BatteryList from '@/components/batteryList/BatteryList.vue'
 import SmartHomeList from '@/components/smartHome/SmartHomeList.vue'
+import CounterList from '@/components/counterList/CounterList.vue'
+import VehicleList from '@/components/vehicleList/VehicleList.vue'
+import GlobalPriceChart from '@/components/priceChart/GlobalPriceChart.vue'
+import InverterList from '@/components/inverterList/InverterList.vue'
 import CarouselFix from '@/components/shared/CarouselFix.vue'
 import { msgInit } from '@/assets/js/processMessages'
 import MQTTViewer from '@/components/mqttViewer/MQTTViewer.vue'
 import ThemeSettings from '@/views/ThemeSettings.vue'
-import CounterList from '@/components/counterList/CounterList.vue'
-import VehicleList from '@/components/vehicleList/VehicleList.vue'
 import { resetArcs } from '@/assets/js/themeConfig'
 import {
 	globalConfig,
 	updateDimensions,
 	screensize,
 } from '@/assets/js/themeConfig'
-import GlobalPriceChart from '@/components/priceChart/GlobalPriceChart.vue'
 import { initGraph } from '@/components/powerGraph/model'
 
 // state
 const showMQ = ref(false)
 const showSH = computed(() => {
-	return Object.values(shDevices).filter((dev) => dev.configured).length > 0
+	return [...shDevices.values()].filter((dev) => dev.configured).length > 0
 })
 // methods
 function init() {
@@ -276,7 +308,7 @@ onMounted(() => {
 function haveFocus() {
 	if (document.hasFocus()) {
 		//	console.log('I have focus')
-		initGraph()
+		initGraph(true) // reload only
 	}
 	//msgInit()
 }
@@ -339,5 +371,8 @@ function haveFocus() {
 
 .fa-coins {
 	color: var(--color-battery);
+}
+.fa-solar-panel {
+	color: var(--color-pv);
 }
 </style>

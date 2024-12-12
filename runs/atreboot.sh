@@ -1,5 +1,6 @@
 #!/bin/bash
 OPENWBBASEDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+hasInet=0
 
 # setup log file
 LOGFILE="${OPENWBBASEDIR}/ramdisk/main.log"
@@ -17,6 +18,30 @@ chmod 666 "$LOGFILE"
 			return 0
 		else
 			return 1
+		fi
+	}
+
+	waitForServiceStop() {
+		# this function waits for a service to stop and kills the process if it takes too long
+		# this is necessary at least for mosquitto, as the service is stopped, but the process is still running
+		service=$1
+		pattern=$2
+		timeout=$3
+
+		counter=0
+		sudo systemctl stop "$service"
+		while pgrep --full "$pattern" >/dev/null && ((counter < timeout)); do
+			echo "process '$pattern' still running after ${counter}s, waiting..."
+			sleep 1
+			((counter++))
+		done
+		if ((counter >= timeout)); then
+			echo "process '$pattern' still running after ${timeout}s, killing process"
+			sudo pkill --full "$pattern" --signal 9
+			sleep 2
+			# if the process was killed, the service is in "active (exited)" state
+			# so we need to trigger a stop here to be able to start it again
+			sudo systemctl stop "$service"
 		fi
 	}
 
@@ -82,7 +107,31 @@ chmod 666 "$LOGFILE"
 		echo "adding init to $boot_config_target..."
 		sudo tee -a "$boot_config_target" <"$boot_config_source" >/dev/null
 		echo "done"
-		echo "new configuration active after next boot"
+		sudo reboot now
+	fi
+
+	ramdisk_config_source="${OPENWBBASEDIR}/data/config/ramdisk_config.txt"
+	ramdisk_config_target="/etc/fstab"
+	echo "checking ramdisk settings in $ramdisk_config_target..."
+	if versionMatch "$ramdisk_config_source" "$ramdisk_config_target"; then
+		echo "already up to date"
+	else
+		echo "openwb section not found or outdated"
+		# delete old settings with version tag
+		pattern_begin=$(grep -m 1 '#' "$ramdisk_config_source")
+		pattern_end=$(grep '#' "$ramdisk_config_source" | tail -n 1)
+		sudo sed -i "/$pattern_begin/,/$pattern_end/d" "$ramdisk_config_target"
+		# check for old settings without version tag
+		if grep -o "tmpfs ${OPENWBBASEDIR}/ramdisk" "$ramdisk_config_target"; then
+			echo "old setting without version tag found, removing"
+			sudo sed -i "\#tmpfs ${OPENWBBASEDIR}/ramdisk#D" "$ramdisk_config_target"
+		fi
+		# add new settings
+		echo "adding ramdisk settings to $ramdisk_config_target..."
+		sudo tee -a "$ramdisk_config_target" <"$ramdisk_config_source" >/dev/null
+		echo "done"
+		echo "rebooting system"
+		sudo reboot now &
 	fi
 
 	# check group membership
@@ -103,7 +152,15 @@ chmod 666 "$LOGFILE"
 
 	# network setup
 	echo "Network..."
-	"${OPENWBBASEDIR}/runs/setup_network.sh"
+	if "${OPENWBBASEDIR}/runs/setup_network.sh"; then
+		hasInet=1
+		echo "network setup done"
+	else
+		hasInet=0
+		echo "#### network setup failed!"
+		echo "#### unable to update dependencies and version information"
+		echo "#### continue anyway..."
+	fi
 
 	# tune apt configuration and install required packages
 	if [ -d "/etc/apt/apt.conf.d" ]; then
@@ -116,7 +173,11 @@ chmod 666 "$LOGFILE"
 	else
 		echo "path '/etc/apt/apt.conf.d' is missing! unsupported system!"
 	fi
-	"${OPENWBBASEDIR}/runs/install_packages.sh"
+	if ((hasInet == 1)); then
+		"${OPENWBBASEDIR}/runs/install_packages.sh"
+	else
+		echo "no internet connection, skipping package installation"
+	fi
 
 	# check for openwb cron jobs
 	if versionMatch "${OPENWBBASEDIR}/data/config/openwb.cron" "/etc/cron.d/openwb"; then
@@ -140,16 +201,6 @@ chmod 666 "$LOGFILE"
 		sudo reboot now &
 	fi
 
-	# this check is obsolete as openwb2 service definition is a symlink!
-	# ToDo: remove lines
-	# if versionMatch "${OPENWBBASEDIR}/data/config/openwb2.service" "/etc/systemd/system/openwb2.service"; then
-	# 	echo "openwb2.service already up to date"
-	# else
-	# 	echo "updating openwb2.service"
-	# 	sudo cp "${OPENWBBASEDIR}/data/config/openwb2.service" "/etc/systemd/system/openwb2.service"
-	# 	sudo reboot now &
-	# fi
-
 	# check for remote support service definition
 	if [ ! -f "/etc/systemd/system/openwbRemoteSupport.service" ]; then
 		echo "openwbRemoteSupport service missing, installing service"
@@ -171,11 +222,15 @@ chmod 666 "$LOGFILE"
 
 	# check for pending restore
 	if [[ -f "${OPENWBBASEDIR}/data/restore/run_on_boot" ]]; then
-		echo "pending restore detected, executing restore"
+		echo "pending restore detected"
 		# remove flag to prevent a boot loop on failure
 		rm "${OPENWBBASEDIR}/data/restore/run_on_boot"
-		"${OPENWBBASEDIR}/runs/restore.sh"
-		# restore.sh will reboot if successful
+		if ((hasInet == 1)); then
+			"${OPENWBBASEDIR}/runs/restore.sh"
+			# restore.sh will reboot if successful
+		else
+			echo "no internet connection, restore not possible, skipping"
+		fi
 	else
 		echo "no restore pending, normal startup"
 	fi
@@ -183,6 +238,25 @@ chmod 666 "$LOGFILE"
 	# clean python cache
 	echo "cleaning obsolete python cache folders..."
 	"$OPENWBBASEDIR/runs/cleanPythonCache.sh"
+
+	# detect connected displays
+	# set default to "true" as fallback if "tvservice" is missing
+	displayDetected="true"
+	if which tvservice >/dev/null; then
+		echo "detected 'tvservice', query for connected displays"
+		output=$(tvservice -l)
+		echo "$output"
+		if [[ ! $output =~ "HDMI" ]] && [[ ! $output =~ "LCD" ]]; then
+			echo "no display detected"
+			displayDetected="false"
+		else
+			echo "detected HDMI or LCD display(s)"
+		fi
+	else
+		echo "'tvservice' not found, assuming a display is present"
+	fi
+	echo "displayDetected: $displayDetected"
+	mosquitto_pub -p 1886 -t "openWB/optional/int_display/detected" -r -m "$displayDetected"
 
 	# display setup
 	echo "display setup..."
@@ -215,66 +289,31 @@ chmod 666 "$LOGFILE"
 		"${OPENWBBASEDIR}/runs/update_local_display.sh"
 	fi
 
-	# check for apache configuration
-	echo "apache default site..."
-	restartService=0
-	if versionMatch "${OPENWBBASEDIR}/data/config/000-default.conf" "/etc/apache2/sites-available/000-default.conf"; then
-		echo "...ok"
-	else
-		sudo cp "${OPENWBBASEDIR}/data/config/000-default.conf" "/etc/apache2/sites-available/"
-		restartService=1
-		echo "...updated"
-	fi
-	echo "checking required apache modules..."
-	if sudo a2query -m headers; then
-		echo "headers already enabled"
-	else
-		echo "headers currently disabled; enabling module"
-		sudo a2enmod headers
-		restartService=1
-	fi
-	if sudo a2query -m ssl; then
-		echo "ssl already enabled"
-	else
-		echo "ssl currently disabled; enabling module"
-		sudo a2enmod ssl
-		restartService=1
-	fi
-	if sudo a2query -m proxy_wstunnel; then
-		echo "proxy_wstunnel already enabled"
-	else
-		echo "proxy_wstunnel currently disabled; enabling module"
-		sudo a2enmod proxy_wstunnel
-		restartService=1
-	fi
-	if ! versionMatch "${OPENWBBASEDIR}/data/config/apache-openwb-ssl.conf" "/etc/apache2/sites-available/apache-openwb-ssl.conf"; then
-		echo "installing ssl site configuration"
-		sudo a2dissite default-ssl
-		sudo cp "${OPENWBBASEDIR}/data/config/apache-openwb-ssl.conf" "/etc/apache2/sites-available/"
-		sudo a2ensite apache-openwb-ssl
-		restartService=1
-	fi
-	if ((restartService == 1)); then
-		echo -n "restarting apache..."
-		sudo systemctl restart apache2
-		echo "done"
-	fi
+	# check apache configuration
+	"${OPENWBBASEDIR}/runs/setup_apache2.sh"
 
 	# check for mosquitto configuration
 	echo "check mosquitto installation..."
 	restartService=0
-	if versionMatch "${OPENWBBASEDIR}/data/config/mosquitto.conf" "/etc/mosquitto/mosquitto.conf"; then
+	if versionMatch "${OPENWBBASEDIR}/data/config/mosquitto/mosquitto.conf" "/etc/mosquitto/mosquitto.conf"; then
 		echo "mosquitto.conf already up to date"
 	else
 		echo "updating mosquitto.conf"
-		sudo cp "${OPENWBBASEDIR}/data/config/mosquitto.conf" "/etc/mosquitto/mosquitto.conf"
+		sudo cp "${OPENWBBASEDIR}/data/config/mosquitto/mosquitto.conf" "/etc/mosquitto/mosquitto.conf"
 		restartService=1
 	fi
-	if versionMatch "${OPENWBBASEDIR}/data/config/openwb.conf" "/etc/mosquitto/conf.d/openwb.conf"; then
+	if versionMatch "${OPENWBBASEDIR}/data/config/mosquitto/openwb.conf" "/etc/mosquitto/conf.d/openwb.conf"; then
 		echo "mosquitto openwb.conf already up to date"
 	else
 		echo "updating mosquitto openwb.conf"
-		sudo cp "${OPENWBBASEDIR}/data/config/openwb.conf" "/etc/mosquitto/conf.d/openwb.conf"
+		sudo cp "${OPENWBBASEDIR}/data/config/mosquitto/openwb.conf" "/etc/mosquitto/conf.d/openwb.conf"
+		restartService=1
+	fi
+	if versionMatch "${OPENWBBASEDIR}/data/config/mosquitto/mosquitto.acl" "/etc/mosquitto/mosquitto.acl"; then
+		echo "mosquitto acl already up to date"
+	else
+		echo "updating mosquitto acl"
+		sudo cp "${OPENWBBASEDIR}/data/config/mosquitto/mosquitto.acl" "/etc/mosquitto/mosquitto.acl"
 		restartService=1
 	fi
 	if [[ ! -f "/etc/mosquitto/certs/openwb.key" ]]; then
@@ -287,32 +326,41 @@ chmod 666 "$LOGFILE"
 	fi
 	if ((restartService == 1)); then
 		echo -n "restarting mosquitto service..."
-		sudo systemctl stop mosquitto
-		sleep 2
+		waitForServiceStop "mosquitto" "mosquitto.conf" 10
 		sudo systemctl start mosquitto
 		echo "done"
 	fi
 
 	#check for mosquitto_local instance
-	restartService=0
-	if versionMatch "${OPENWBBASEDIR}/data/config/mosquitto_local.conf" "/etc/mosquitto/mosquitto_local.conf"; then
+	# restartService=0  # if we restart mosquitto, we need to restart mosquitto_local as well
+	if versionMatch "${OPENWBBASEDIR}/data/config/mosquitto/mosquitto_local_init" "/etc/init.d/mosquitto_local"; then
+		echo "mosquitto_local service definition already up to date"
+	else
+		echo "updating mosquitto_local service definition"
+		sudo cp "${OPENWBBASEDIR}/data/config/mosquitto/mosquitto_local_init" /etc/init.d/mosquitto_local
+		sudo chown root:root /etc/init.d/mosquitto_local
+		sudo chmod 755 /etc/init.d/mosquitto_local
+		sudo systemctl daemon-reload
+		sudo systemctl enable mosquitto_local
+		restartService=1
+	fi
+	if versionMatch "${OPENWBBASEDIR}/data/config/mosquitto/mosquitto_local.conf" "/etc/mosquitto/mosquitto_local.conf"; then
 		echo "mosquitto_local.conf already up to date"
 	else
 		echo "updating mosquitto_local.conf"
-		sudo cp -a "${OPENWBBASEDIR}/data/config/mosquitto_local.conf" "/etc/mosquitto/mosquitto_local.conf"
+		sudo cp -a "${OPENWBBASEDIR}/data/config/mosquitto/mosquitto_local.conf" "/etc/mosquitto/mosquitto_local.conf"
 		restartService=1
 	fi
-	if versionMatch "${OPENWBBASEDIR}/data/config/openwb_local.conf" "/etc/mosquitto/conf_local.d/openwb_local.conf"; then
+	if versionMatch "${OPENWBBASEDIR}/data/config/mosquitto/openwb_local.conf" "/etc/mosquitto/conf_local.d/openwb_local.conf"; then
 		echo "mosquitto openwb_local.conf already up to date"
 	else
 		echo "updating mosquitto openwb_local.conf"
-		sudo cp -a "${OPENWBBASEDIR}/data/config/openwb_local.conf" "/etc/mosquitto/conf_local.d/"
+		sudo cp -a "${OPENWBBASEDIR}/data/config/mosquitto/openwb_local.conf" "/etc/mosquitto/conf_local.d/"
 		restartService=1
 	fi
 	if ((restartService == 1)); then
 		echo -n "restarting mosquitto_local service..."
-		sudo systemctl stop mosquitto_local
-		sleep 2
+		waitForServiceStop "mosquitto_local" "mosquitto_local.conf" 10
 		sudo systemctl start mosquitto_local
 		echo "done"
 	fi
@@ -324,26 +372,30 @@ chmod 666 "$LOGFILE"
 	fi
 
 	# check for python dependencies
-	echo "install required python packages with 'pip3'..."
-	if pip3 install -r "${OPENWBBASEDIR}/requirements.txt"; then
-		echo "done"
+	if ((hasInet == 1)); then
+		echo "install required python packages with 'pip3'..."
+		if pip3 install -r "${OPENWBBASEDIR}/requirements.txt"; then
+			echo "done"
+		else
+			echo "failed!"
+			message="Bei der Installation der benötigten Python-Bibliotheken ist ein Fehler aufgetreten! Bitte die Logdateien prüfen."
+			payload=$(printf '{"source": "system", "type": "danger", "message": "%s", "timestamp": %d}' "$message" "$(date +"%s")")
+			mosquitto_pub -p 1886 -t "openWB/system/messages/$(date +"%s%3N")" -r -m "$payload"
+		fi
 	else
-		echo "failed!"
-		message="Bei der Installation der benötigten Python-Bibliotheken ist ein Fehler aufgetreten! Bitte die Logdateien prüfen."
-		payload=$(printf '{"source": "system", "type": "danger", "message": "%s", "timestamp": %d}' "$message" "$(date +"%s")")
-		mosquitto_pub -p 1886 -t "openWB/system/messages/$(date +"%s%3N")" -r -m "$payload"
+		echo "no internet connection, skipping python package installation"
 	fi
 
 	# collect some hardware info
 	"${OPENWBBASEDIR}/runs/uuid.sh"
 
 	# update current published versions
-	echo "load versions..."
-	"$OPENWBBASEDIR/runs/update_available_versions.sh"
-	# # and record the current commit details
-	# commitId=$(git -C "${OPENWBBASEDIR}/" log --format="%h" -n 1)
-	# echo "$commitId" > "${OPENWBBASEDIR}/ramdisk/currentCommitHash"
-	# git -C "${OPENWBBASEDIR}/" branch -a --contains "$commitId" | perl -nle 'm|.*origin/(.+).*|; print $1' | uniq | xargs > "${OPENWBBASEDIR}/ramdisk/currentCommitBranches"
+	if ((hasInet == 1)); then
+		echo "load versions..."
+		"$OPENWBBASEDIR/runs/update_available_versions.sh"
+	else
+		echo "no internet connection, skipping version update"
+	fi
 
 	# set restore dir permissions to allow file upload for apache
 	sudo chgrp www-data "${OPENWBBASEDIR}/data/restore" "${OPENWBBASEDIR}/data/restore/"* "${OPENWBBASEDIR}/data/data_migration" "${OPENWBBASEDIR}/data/data_migration/"*

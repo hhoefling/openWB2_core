@@ -1,42 +1,39 @@
 <template>
 	<WbSubwidget :titlecolor="device.color" :fullwidth="true">
 		<template #title>
-			{{ device.name }}
+			<span class="devicename">
+				{{ device.name }}
+			</span>
 		</template>
 		<template #buttons>
-			<div class="d-flex float-right justify-content-end align-items-center">
-				<span
-					v-for="(temp, idx) in device.temp"
-					:key="idx"
-					class="p-0 m-0 align-items-center d-flex"
-				>
-					<span v-if="temp < 300" class="my-0 badge rounded-pill tempbadge mx-1"
-						>{{ formatTemp(temp) }}
-					</span>
-				</span>
-				<span
-					v-if="props.device.canSwitch"
-					:class="switchIcon"
-					:style="switchStyle"
-					class="fa statusbutton mr-2 ms-4"
-					@click="statusButtonClicked"
-				/>
-				<span
-					v-if="props.device.canSwitch"
-					class="badge rounded-pill modebutton mx-2"
-					@click="modeButtonClicked"
-					>{{ deviceMode }}</span
-				>
-			</div>
+			<span v-for="(temp, idx) in device.temp" :key="idx">
+				<WbBadge v-if="temp < 300" bgcolor="var(--color-battery)">
+					<span>{{ formatTemp(temp) }} </span>
+				</WbBadge>
+			</span>
+			<span
+				v-if="props.device.canSwitch"
+				:class="switchIcon"
+				:style="switchStyle"
+				class="fa-solid statusbutton mr-2 ms-2"
+				@click="statusButtonClicked"
+			/>
+			<WbBadge
+				v-if="props.device.canSwitch"
+				type="button"
+				@click="modeButtonClicked"
+			>
+				{{ deviceMode }}
+			</WbBadge>
 		</template>
 		<div class="subgrid">
-			<InfoItem heading="Leistung:" class="grid-col-4 grid-left">
+			<InfoItem heading="Leistung:" :small="true" class="grid-col-4 grid-left">
 				<FormatWatt :watt="device.power" />
 			</InfoItem>
-			<InfoItem heading="Energie:" class="grid-col-4">
+			<InfoItem heading="Energie:" :small="true" class="grid-col-4">
 				<FormatWattH :watt-h="device.energy" />
 			</InfoItem>
-			<InfoItem heading="Laufzeit:" class="grid-col-4 grid-right">
+			<InfoItem heading="Laufzeit:" :small="true" class="grid-col-4 grid-right">
 				{{ formatTime(device.runningTime) }}
 			</InfoItem>
 		</div>
@@ -51,6 +48,7 @@ import WbSubwidget from '../shared/WbSubwidget.vue'
 import InfoItem from '../shared/InfoItem.vue'
 import FormatWatt from '../shared/FormatWatt.vue'
 import FormatWattH from '../shared/FormatWattH.vue'
+import WbBadge from '../shared/WbBadge.vue'
 import { updateServer } from '@/assets/js/sendMessages'
 const props = defineProps<{
 	device: ShDevice
@@ -58,10 +56,10 @@ const props = defineProps<{
 
 const switchIcon = computed(() => {
 	return props.device.status == 'on'
-		? 'fa-toggle-on'
+		? 'fa-toggle-on fa-xl'
 		: props.device.status == 'waiting'
-		? 'fa-spinner fa-spin'
-		: 'fa-toggle-off'
+			? 'fa-spinner fa-spin'
+			: 'fa-toggle-off fa-xl'
 })
 const switchStyle = computed(() => {
 	let swColor = 'var(--color-switchRed)'
@@ -92,7 +90,7 @@ function statusButtonClicked() {
 		} else {
 			updateServer('shSwitchOn', 1, props.device.id)
 		}
-		shDevices[props.device.id].status = 'waiting'
+		shDevices.get(props.device.id)!.status = 'waiting'
 	}
 }
 function modeButtonClicked() {
@@ -112,23 +110,10 @@ const deviceMode = computed(() => {
 </script>
 
 <style scoped>
+.devicename {
+	font-size: var(--font-medium);
+}
 .statusbutton {
-	font-size: var(--font-large);
-}
-
-.modebutton {
-	background-color: var(--color-menu);
-	font-size: var(--font-verysmall);
-	font-weight: normal;
-}
-
-.tempbadge {
-	background-color: var(--color-battery);
-	color: var(--color-bg);
-	font-size: var(--font-verysmall);
-	font-weight: normal;
-}
-.infolist {
-	justify-content: center;
+	font-size: var(--font-extralarge);
 }
 </style>

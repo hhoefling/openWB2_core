@@ -26,8 +26,9 @@ from helpermodules.hardware_configuration import update_hardware_configuration
 from helpermodules.measurement_logging.process_log import get_totals, string_to_float, string_to_int
 from helpermodules.measurement_logging.write_log import LegacySmartHomeLogData, get_names
 from helpermodules.timecheck import convert_timedelta_to_time_string, get_difference
-from helpermodules.utils import thread_handler
+from helpermodules.utils import joined_thread_handler
 from helpermodules.pub import Pub
+from helpermodules.utils.json_file_handler import write_and_check
 from modules.ripple_control_receivers.gpio.config import GpioRcr
 import re
 
@@ -87,9 +88,9 @@ class MigrateData:
             log.info("Version wird geprüft...")
             self._check_version()
             log.info("Logdateien werden importiert...")
-            thread_handler(self.convert_csv_to_json_chargelog(), None)
-            thread_handler(self.convert_csv_to_json_measurement_log("daily"), None)
-            thread_handler(self.convert_csv_to_json_measurement_log("monthly"), None)
+            joined_thread_handler(self.convert_csv_to_json_chargelog(), None)
+            joined_thread_handler(self.convert_csv_to_json_measurement_log("daily"), None)
+            joined_thread_handler(self.convert_csv_to_json_measurement_log("monthly"), None)
             log.info("Seriennummer wird übernommen...")
             self._migrate_settings_from_openwb_conf()
         except Exception as e:
@@ -154,8 +155,7 @@ class MigrateData:
                 except FileNotFoundError:
                     pass
                 new_entries.extend(content)
-                with open(filepath, "w") as jsonFile:
-                    json.dump(new_entries, jsonFile)
+                write_and_check(filepath, new_entries)
             except Exception:
                 log.exception(f"Fehler beim Konvertieren des Lade-Logs vom {old_file_name}")
 
@@ -278,8 +278,7 @@ class MigrateData:
                     with open(filepath, "r") as jsonFile:
                         content = json.load(jsonFile)
                 except FileNotFoundError:
-                    with open(filepath, "w+") as jsonFile:
-                        json.dump({"entries": [], "totals": {}}, jsonFile)
+                    write_and_check(filepath, {"entries": [], "totals": {}})
                     with open(filepath, "r") as jsonFile:
                         content = json.load(jsonFile)
                 entries = content["entries"]
@@ -288,8 +287,7 @@ class MigrateData:
                 content["totals"] = get_totals(merged_entries)
                 content["entries"] = merged_entries
                 content["names"] = get_names(content["totals"], LegacySmartHomeLogData().sh_names)
-                with open(filepath, "w") as jsonFile:
-                    json.dump(content, jsonFile)
+                write_and_check(filepath, content)
             except Exception:
                 log.exception(f"Fehler beim Konvertieren des Logs vom {old_file_name}")
 
@@ -307,7 +305,7 @@ class MigrateData:
     def _daily_log_entry(self, file: str):
         """ Generator-Funktion, die einen Eintrag aus dem Tages-Log konvertiert.
         alte Spaltenbelegung:
-            15, 23 oder 39 Felder! Wurde in 1.9 nie vereinheitlicht!
+            8, 15, 23 oder 39 Felder! Wurde in 1.9 nie vereinheitlicht!
         Allgemein:
             0: Datum "HHMM"
         EVU:
@@ -387,12 +385,12 @@ class MigrateData:
                             )
                         if self.id_map.bat is not None:
                             new_entry["bat"].update({"all": {
-                                "imported": string_to_float(row[8]),
-                                "exported": string_to_float(row[9]),
+                                "imported": string_to_float(row[8]) if len(row) >= 9 else 0,
+                                "exported": string_to_float(row[9]) if len(row) >= 10 else 0,
                                 "soc": string_to_int(row[20]) if len(row) >= 23 else 0
                             }, f"bat{self.map_to_new_ids('bat')}": {
-                                "imported": string_to_float(row[8]),
-                                "exported": string_to_float(row[9]),
+                                "imported": string_to_float(row[8]) if len(row) >= 9 else 0,
+                                "exported": string_to_float(row[9]) if len(row) >= 10 else 0,
                                 "soc": string_to_int(row[20]) if len(row) >= 23 else 0
                             }})
                         # SmartHome Devices 1+2 with temperatures
@@ -559,8 +557,7 @@ class MigrateData:
     def _move_serial_number(self) -> None:
         serial_number = self._get_openwb_conf_value("snnumber")
         if serial_number is not None:
-            with open("/home/openwb/snnumber", "w") as file:
-                file.write(f"snnumber={serial_number}")
+            write_and_check("/home/openwb/snnumber", f"snnumber={serial_number}")
 
     def _move_cloud_data(self) -> None:
         cloud_user = self._get_openwb_conf_value("clouduser")
@@ -583,8 +580,7 @@ class MigrateData:
     def _move_pddate(self) -> None:
         pddate = self._get_openwb_conf_value("pddate")
         if pddate is not None:
-            with open("/home/openwb/pddate", "w") as file:
-                file.write(f"pddate={pddate}")
+            write_and_check("/home/openwb/pddate", f"pddate={pddate}")
 
     NOT_CONFIGURED = " wurde in openWB software2 nicht konfiguriert."
 

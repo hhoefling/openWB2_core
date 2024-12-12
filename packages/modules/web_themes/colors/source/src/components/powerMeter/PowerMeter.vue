@@ -69,16 +69,13 @@
 
 					<!-- Show the SoC for the first two cars -->
 					<PMLabel
-						v-if="
-							chargepoints.length > 0 &&
-							vehicles[chargepoints[0].connectedVehicle]
-						"
+						v-if="topVehicles[0] && vehicles[topVehicles[0]]"
 						:x="-width / 2 - margin / 4 + 10"
 						:y="-height / 2 + margin + 5"
 						:labeltext="
-							trimName(vehicles[chargepoints[0].connectedVehicle].name) +
+							trimName(vehicles[topVehicles[0]].name) +
 							': ' +
-							soc(0) +
+							Math.round(vehicles[topVehicles[0]].soc) +
 							'%'
 						"
 						:labelcolor="chargepoints[0].color"
@@ -86,19 +83,18 @@
 						:config="globalConfig"
 					/>
 					<PMLabel
-						v-if="
-							chargepoints.length > 1 &&
-							vehicles[chargepoints[1].connectedVehicle]
-						"
+						v-if="topVehicles[1] && vehicles[topVehicles[1]]"
 						:x="width / 2 + margin / 4 - 10"
 						:y="-height / 2 + margin + 5"
 						:labeltext="
-							trimName(vehicles[chargepoints[1].connectedVehicle].name) +
+							trimName(vehicles[topVehicles[1]].name) +
 							': ' +
-							soc(1) +
+							Math.round(vehicles[topVehicles[0]].soc) +
 							'%'
 						"
-						:labelcolor="chargepoints[1].color"
+						:labelcolor="
+							chargepoints[1] ? chargepoints[1].color : 'var(--color-charging)'
+						"
 						:anchor="'end'"
 						:config="globalConfig"
 					/>
@@ -163,7 +159,11 @@ import {
 	masterData,
 } from '@/assets/js/model'
 import { shDevices } from '../smartHome/model'
-import { chargePoints, vehicles } from '@/components/chargePointList/model'
+import {
+	chargePoints,
+	vehicles,
+	topVehicles,
+} from '@/components/chargePointList/model'
 import PMSourceArc from './PMSourceArc.vue'
 import PMUsageArc from './PMUsageArc.vue'
 import PMLabel from './PMLabel.vue'
@@ -252,15 +252,10 @@ function labelCoordinates(item: number) {
 }
 
 // methods
-
-function soc(i: number) {
-	return Math.round(chargepoints.value[i].soc)
-}
 function trimName(name: string) {
 	const maxlen = 12
 	return name.length > maxlen ? name.slice(0, maxlen - 1) + '.' : name
 }
-
 const currentPrice = computed(() => {
 	const [p] = etData.etPriceList.values()
 	return Math.round(p * 10) / 10

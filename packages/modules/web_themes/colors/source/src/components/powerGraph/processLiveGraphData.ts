@@ -1,5 +1,5 @@
-import { timeParse } from 'd3'
 import { globalData } from '../../assets/js/model'
+import { chargePoints } from '../chargePointList/model'
 import {
 	type GraphDataItem,
 	type RawGraphDataItem,
@@ -48,8 +48,8 @@ export function reloadLiveGraph(topic: string, rawMessage: string) {
 		const newGraphData: GraphDataItem[] = []
 		liveGraph.unsubscribeRefresh()
 		liveGraph.initialized = true
-		liveGraph.rawDataPacks.map((dataPack) => {
-			dataPack.map((rawItem) => {
+		liveGraph.rawDataPacks.forEach((dataPack) => {
+			dataPack.forEach((rawItem) => {
 				const values = extractValues(rawItem)
 				newGraphData.push(values)
 			})
@@ -69,8 +69,18 @@ export function updateLiveGraph(topic: string, rawString: string) {
 	}
 }
 function extractValues(data: RawGraphDataItem): GraphDataItem {
+	const car1 =
+		Object.values(chargePoints).length > 0
+			? Object.values(chargePoints)[0].connectedVehicle
+			: 0
+	const car2 =
+		Object.values(chargePoints).length > 1
+			? Object.values(chargePoints)[1].connectedVehicle
+			: 1
+	const car1id = 'ev' + car1 + '-soc'
+	const car2id = 'ev' + car2 + '-soc'
 	const values: GraphDataItem = {}
-	values.date = fullDate(data.time).valueOf()
+	values.date = +data.timestamp * 1000
 	if (+data.grid > 0) {
 		values.evuIn = +data.grid
 		values.evuOut = 0
@@ -101,22 +111,22 @@ function extractValues(data: RawGraphDataItem): GraphDataItem {
 		values.batIn = 0
 	}
 	if (data['bat-all-soc']) {
-		values.batterySoc = +data['bat-all-soc']
+		values.batSoc = +data['bat-all-soc']
 	} else {
-		values.batterySoc = 0
+		values.batSoc = 0
 	}
-	if (data['ev0-soc']) {
-		values.soc0 = +data['ev0-soc']
+	if (data[car1id]) {
+		values['soc' + car1] = +data[car1id]
 	}
-	if (data['ev1-soc']) {
-		values.soc1 = +data['ev1-soc']
+	if (data[car2id]) {
+		values['soc' + car2] = +data[car2id]
 	}
 
 	values.charging = +data['charging-all']
 	// charge points - we only show a maximum of 10 chargepoints in the graph
 	for (let i = 0; i < 10; i++) {
 		const idx = 'cp' + i
-		values[idx] = +data[idx + '-power'] ?? 0
+		values[idx] = +(data[idx + '-power'] ?? 0)
 	}
 	values.selfUsage = values.pv - values.evuOut
 	if (values.selfUsage < 0) {
@@ -124,21 +134,4 @@ function extractValues(data: RawGraphDataItem): GraphDataItem {
 	}
 	values.devices = 0
 	return values
-}
-function fullDate(timeString: string) {
-	const now = new Date(Date.now())
-	const mSecondsPerDay = 86400000 // milliseconds in a day
-	let date = new Date()
-	const parsedDate = timeParse('%H:%M:%S')(timeString)
-	if (parsedDate) {
-		date = parsedDate
-		date.setDate(now.getDate())
-		date.setMonth(now.getMonth())
-		date.setFullYear(now.getFullYear())
-		if (date.getHours() > now.getHours()) {
-			// this is an entry from yesterday
-			date = new Date(date.getTime() - mSecondsPerDay) // change date to yesterday
-		}
-	}
-	return date
 }

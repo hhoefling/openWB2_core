@@ -29,16 +29,16 @@ class Algorithm:
             common.reset_current()
             log.info("**Mindestrom setzen**")
             self.min_current.set_min_current()
-            log.info("**Sollstrom setzen**")
+            log.info("**Soll-Strom setzen**")
             common.reset_current_to_target_current()
-            self.additional_current.set_additional_current([0, 8])
+            self.additional_current.set_additional_current()
             counter.limit_raw_power_left_to_surplus(self.evu_counter.calc_raw_surplus())
             self.surplus_controlled.check_switch_on()
             if self.evu_counter.data.set.surplus_power_left > 0:
                 log.info("**PV-geführten Strom setzen**")
                 common.reset_current_to_target_current()
                 self.surplus_controlled.set_required_current_to_max()
-                self.surplus_controlled.set_surplus_current([6, 12])
+                self.surplus_controlled.set_surplus_current()
             else:
                 log.info("**Keine Leistung für PV-geführtes Laden übrig.**")
             self.no_current.set_no_current()
@@ -48,7 +48,7 @@ class Algorithm:
 
     def _check_auto_phase_switch_delay(self) -> None:
         """ geht alle LP durch und prüft, ob eine Ladung aktiv ist, ob automatische Phasenumschaltung
-        möglich ist und ob ob ein Timer gestartet oder geChargemode.STOPpt werden muss oder ob
+        möglich ist und ob ob ein Timer gestartet oder gestoppt werden muss oder ob
         ein Timer abgelaufen ist.
         """
         for cp in data.data.cp_data.values():

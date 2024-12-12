@@ -7,18 +7,12 @@
 			<span>Strompreis</span>
 		</template>
 		<template #buttons>
-			<div class="d-flex float-right justify-content-end align-items-center">
-				<span
-					v-if="etData.active"
-					class="badge rounded-pill pricebadge mb-1 me-1"
-					>{{ etData.etCurrentPriceString }}</span
-				>
-				<span
-					v-if="etData.active"
-					class="badge rounded-pill providerbadge mb-1 m-0"
-					>{{ etData.etProvider }}</span
-				>
-			</div>
+			<WbBadge v-if="etData.active" bgcolor="var(--color-charging)">{{
+				etData.etCurrentPriceString
+			}}</WbBadge>
+			<WbBadge v-if="etData.active" bgcolor="var(--color-menu)">{{
+				etData.etProvider
+			}}</WbBadge>
 		</template>
 		<div class="grapharea">
 			<figure id="pricechart" class="p-1 m-0 pricefigure">
@@ -38,6 +32,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { etData } from './model'
 import WbWidgetFlex from '../shared/WbWidgetFlex.vue'
+import WbBadge from '../shared/WbBadge.vue'
 import {
 	extent,
 	scaleTime,
@@ -46,7 +41,9 @@ import {
 	timeFormat,
 	axisLeft,
 	select,
+	line,
 } from 'd3'
+import { globalConfig } from '@/assets/js/themeConfig'
 
 const props = defineProps<{
 	id: string
@@ -96,6 +93,31 @@ const yScale = computed(() => {
 		.range([height - margin.bottom, 0])
 		.domain(yDomain.value)
 })
+const lowerPath = computed(() => {
+	const generator = line()
+	const points = [
+		[margin.left, yScale.value(globalConfig.lowerPriceBound)],
+		[width - margin.right, yScale.value(globalConfig.lowerPriceBound)],
+	]
+	return generator(points as [number, number][])
+})
+const upperPath = computed(() => {
+	const generator = line()
+	const points = [
+		[margin.left, yScale.value(globalConfig.upperPriceBound)],
+		[width - margin.right, yScale.value(globalConfig.upperPriceBound)],
+	]
+	return generator(points as [number, number][])
+})
+
+const zeroPath = computed(() => {
+	const generator = line()
+	const points = [
+		[margin.left, yScale.value(0)],
+		[width - margin.right, yScale.value(0)],
+	]
+	return generator(points as [number, number][])
+})
 
 const xAxisGenerator = computed(() => {
 	return axisBottom<Date>(xScale.value)
@@ -105,11 +127,14 @@ const xAxisGenerator = computed(() => {
 		.tickFormat((d) => (d.getHours() % 6 == 0 ? timeFormat('%H:%M')(d) : ''))
 })
 const yAxisGenerator = computed(() => {
-	return axisLeft<number>(yScale.value)
-		.ticks(yDomain.value[1] - yDomain.value[0])
-		.tickSize(0)
-		.tickSizeInner(-(width - margin.right - margin.left))
-		.tickFormat((d) => d.toString())
+	return (
+		axisLeft<number>(yScale.value)
+			//.ticks(yDomain.value[1] - yDomain.value[0])
+			.ticks(15)
+			.tickSize(0)
+			.tickSizeInner(-(width - margin.right - margin.left))
+			.tickFormat((d) => d.toString())
+	)
 })
 // Draw the diagram
 const draw = computed(() => {
@@ -159,14 +184,17 @@ const draw = computed(() => {
 		.attr('stroke-width', (d) => ((d as number) % 5 == 0 ? '2' : '0.5'))
 
 	yAxis.select('.domain').attr('stroke', 'var(--color-bg)')
-
-	// zero line
-	/* if (yDomain.value[0] < 0) {
+	if (yDomain.value[0] < 0) {
 		svg
 			.append('path')
 			.attr('d', zeroPath.value)
 			.attr('stroke', 'var(--color-fg)')
-	} */
+	}
+	// Line for lower bound
+	svg.append('path').attr('d', lowerPath.value).attr('stroke', 'green')
+	// Line for upper bound
+	svg.append('path').attr('d', upperPath.value).attr('stroke', 'red')
+
 	// Tooltips
 	const ttips = svg
 		.selectAll('ttip')
@@ -228,12 +256,12 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.pricebadge {
+.priceWbBadge {
 	background-color: var(--color-charging);
 	font-weight: normal;
 }
 
-.providerbadge {
+.providerWbBadge {
 	background-color: var(--color-menu);
 	font-weight: normal;
 }

@@ -1,6 +1,8 @@
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { updateServer } from '@/assets/js/sendMessages'
-import type { PowerItem } from '@/assets/js/types'
+import { ChargeMode, type PowerItem } from '@/assets/js/types'
+import { globalConfig } from '@/assets/js/themeConfig'
+import { masterData } from '@/assets/js/model'
 export class ChargePoint {
 	id: number
 	name = 'Ladepunkt'
@@ -245,7 +247,6 @@ export class ChargePoint {
 		return vehicles[this.connectedVehicle].etMaxPrice ?? 0
 	}
 	set etMaxPrice(newPrice: number) {
-		console.log('Setting et max price needs to be implemented')
 		updateServer('cpEtMaxPrice', Math.round(newPrice * 10) / 1000000, this.id)
 	}
 	toPowerItem(): PowerItem {
@@ -258,23 +259,21 @@ export class ChargePoint {
 			pvPercentage: this.pvPercentage,
 			color: this.color,
 			icon: this.icon,
+			showInGraph: true,
 		}
 	}
 }
 export class Vehicle {
 	id: number
-	name = ''
-	private _chargeTemplateId = 0
-	private _evTemplateId = 0
+	name = '__invalid'
 	tags: Array<string> = []
 	config = {}
 	soc = 0
 	range = 0
-	private _etActive = false
-	private _etMaxPrice = 20
 	constructor(index: number) {
 		this.id = index
 	}
+	private _chargeTemplateId = 0
 	get chargeTemplateId() {
 		return this._chargeTemplateId
 	}
@@ -285,6 +284,7 @@ export class Vehicle {
 	updateChargeTemplateId(id: number) {
 		this._chargeTemplateId = id
 	}
+	private _evTemplateId = 0
 	get evTemplateId() {
 		return this._evTemplateId
 	}
@@ -305,8 +305,6 @@ export class Vehicle {
 	set etActive(val) {
 		if (chargeTemplates[this.chargeTemplateId]) {
 			updateServer('priceCharging', val, this.chargeTemplateId)
-
-			// openWB/set/vehicle/template/charge_template/2/et/active -> false
 		}
 	}
 	get etMaxPrice() {
@@ -324,6 +322,12 @@ export class Vehicle {
 		}
 		return undefined
 	}
+	get visible(): boolean {
+		return (
+			this.name != '__invalid' &&
+			(this.id != 0 || globalConfig.showStandardVehicle)
+		)
+	}
 }
 export interface ConnectedVehicleConfig {
 	average_consumption: number
@@ -332,13 +336,6 @@ export interface ConnectedVehicleConfig {
 	current_plan: string
 	ev_template: number
 	priority: boolean
-}
-export enum ChargeMode {
-	instant_charging = 'instant_charging',
-	pv_charging = 'pv_charging',
-	scheduled_charging = 'scheduled_charging',
-	standby = 'standby',
-	stop = 'stop',
 }
 export interface ChargeTimePlan {
 	active: boolean
@@ -431,8 +428,19 @@ export const evTemplates: { [key: number]: EvTemplate } = reactive({})
 export function addChargePoint(chargePointIndex: number) {
 	if (!(chargePointIndex in chargePoints)) {
 		chargePoints[chargePointIndex] = new ChargePoint(chargePointIndex)
-		chargePoints[chargePointIndex].color =
+		const cpcolor =
 			'var(--color-cp' + (Object.values(chargePoints).length - 1) + ')'
+		chargePoints[chargePointIndex].color = cpcolor
+		const cpId = 'cp' + chargePointIndex
+		if (!masterData[cpId]) {
+			masterData[cpId] = {
+				name: 'Ladepunkt',
+				color: cpcolor,
+				icon: 'Ladepunkt',
+			}
+		} else {
+			masterData['cp' + chargePointIndex].color = cpcolor
+		}
 		// console.info('Added chargepoint ' + chargePointIndex)
 	} else {
 		// console.info('Duplicate chargepoint message: ' + chargePointIndex)
@@ -443,3 +451,39 @@ export function resetChargePoints() {
 		delete chargePoints[parseInt(key)]
 	})
 }
+
+export const topVehicles = computed(() => {
+	const result: number[] = []
+	const cps = Object.values(chargePoints)
+	const vhcls = Object.values(vehicles).filter((v) => v.visible)
+	// vehicle 1
+	let v1 = -1
+	switch (cps.length) {
+		case 0:
+			v1 = vhcls[0] ? vhcls[0].id : -1
+			break
+		default:
+			v1 = cps[0].connectedVehicle //?? vhcls[0] ? vhcls[0].id : -1
+	}
+	// vehicle 2
+	let v2 = -1
+	switch (cps.length) {
+		case 0:
+		case 1:
+			v2 = vhcls[0] ? vhcls[0].id : -1
+			break
+		default:
+			v2 = cps[1].connectedVehicle //?? vhcls[1] ? vhcls[1].id : -1
+	}
+	// change v2 if the same as v1
+	if (v1 == v2) {
+		v2 = vhcls[1] ? vhcls[1].id : -1
+	}
+	if (v1 != -1) {
+		result.push(v1)
+	}
+	if (v2 != -1) {
+		result.push(v2)
+	}
+	return result
+})

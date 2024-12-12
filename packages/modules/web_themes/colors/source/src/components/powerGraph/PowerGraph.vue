@@ -25,32 +25,22 @@
 				</span>
 			</div>
 		</template>
-		<div
-			v-if="graphData.data.length == 0"
-			class="d-flex justify-content-center waitsign rounded"
-		>
-			<span class="fa-solid fa-xl fa-spinner fa-spin"></span>
-		</div>
-		<figure
-			v-show="graphData.data.length > 0"
-			id="powergraph"
-			class="p-0 m-0"
-			@click="changeStackOrder"
-		>
-			<svg :viewBox="'0 0 ' + width + ' ' + height">
+
+		<figure v-show="graphData.data.length > 0" id="powergraph" class="p-0 m-0">
+			<svg id="powergraph" :viewBox="'0 0 ' + width + ' ' + height">
 				<!-- Draw the source graph -->
-				<PGSourceGraph
+				<PgSourceGraph
 					:width="width - margin.left - 2 * margin.right"
 					:height="(height - margin.top - margin.bottom) / 2"
 					:margin="margin"
 				/>
-				<PGUsageGraph
+				<PgUsageGraph
 					:width="width - margin.left - 2 * margin.right"
 					:height="(height - margin.top - margin.bottom) / 2"
 					:margin="margin"
 					:stack-order="globalConfig.usageStackOrder"
 				/>
-				<PGXAxis
+				<PgXAxis
 					:width="width - margin.left - 2 * margin.right"
 					:height="height - margin.top - margin.bottom"
 					:margin="margin"
@@ -62,7 +52,7 @@
 							(graphData.graphMode == 'day' ||
 								graphData.graphMode == 'today' ||
 								graphData.graphMode == 'live') &&
-							Object.values(chargePoints).length > 0
+							Object.values(vehicles).filter((v) => v.visible).length > 0
 						"
 						:width="width - margin.left - 2 * margin.right"
 						:height="(height - margin.top - margin.bottom) / 2"
@@ -74,7 +64,7 @@
 							(graphData.graphMode == 'day' ||
 								graphData.graphMode == 'today' ||
 								graphData.graphMode == 'live') &&
-							Object.values(chargePoints).length > 1
+							Object.values(vehicles).filter((v) => v.visible).length > 1
 						"
 						:width="width - margin.left - 2 * margin.right"
 						:height="(height - margin.top - margin.bottom) / 2"
@@ -84,7 +74,8 @@
 					<PgSoc
 						v-if="
 							(graphData.graphMode == 'day' ||
-								graphData.graphMode == 'today') &&
+								graphData.graphMode == 'today' ||
+								graphData.graphMode == 'live') &&
 							globalData.isBatteryConfigured
 						"
 						:width="width - margin.left - 2 * margin.right"
@@ -94,16 +85,25 @@
 					/>
 					<PgSocAxis
 						v-if="
-							graphData.graphMode == 'day' || graphData.graphMode == 'today'
+							graphData.graphMode == 'day' ||
+							graphData.graphMode == 'today' ||
+							graphData.graphMode == 'live'
 						"
 						:width="width - margin.left - margin.right"
 						:height="(height - margin.top - margin.bottom) / 2"
 						:margin="margin"
 					/>
 				</g>
-				<g id="button">
+				<PgToolTips
+					v-if="graphData.graphMode == 'day' || graphData.graphMode == 'today'"
+					:width="width - margin.left - margin.right"
+					:height="height - margin.top - margin.bottom"
+					:margin="margin"
+					:data="graphData.data"
+				></PgToolTips>
+				<g id="button" type="button" @click="changeStackOrder">
 					<text
-						:x="width"
+						:x="width - 10"
 						:y="height - 10"
 						color="var(--color-menu)"
 						text-anchor="end"
@@ -120,9 +120,9 @@
 
 <script setup lang="ts">
 import WBWidget from '../shared/WBWidget.vue'
-import PGSourceGraph from './PGSourceGraph.vue'
-import PGUsageGraph from './PGUsageGraph.vue'
-import PGXAxis from './PGXAxis.vue'
+import PgSourceGraph from './PgSourceGraph.vue'
+import PgUsageGraph from './PgUsageGraph.vue'
+import PgXAxis from './PgXAxis.vue'
 import { globalData } from '@/assets/js/model'
 import {
 	graphData,
@@ -134,17 +134,20 @@ import {
 	width,
 	height,
 	margin,
+	mytransform,
 } from './model'
 import { globalConfig, widescreen } from '@/assets/js/themeConfig'
 import PgSoc from './PgSoc.vue'
 import PgSocAxis from './PgSocAxis.vue'
-import { chargePoints } from '../chargePointList/model'
+import { vehicles } from '../chargePointList/model'
 import PgSelector from './PgSelector.vue'
+import { zoom, type D3ZoomEvent, type Selection, select } from 'd3'
+import { onMounted } from 'vue'
+import PgToolTips from './PgToolTips.vue'
 
 // state
 const stackOrderMax = 2
 const heading = 'Leistung / Ladestand '
-
 function changeStackOrder() {
 	let newOrder = globalConfig.usageStackOrder + 1
 	if (newOrder > stackOrderMax) {
@@ -153,9 +156,44 @@ function changeStackOrder() {
 	globalConfig.usageStackOrder = newOrder
 	setInitializeUsageGraph(true)
 }
+function setZoom(svg: Selection<Element, unknown, HTMLElement, unknown>) {
+	const myextent: [[number, number], [number, number]] = [
+		[0, margin.top],
+		[width, height - margin.top],
+	]
+	svg.call(
+		zoom<Element, unknown>()
+			.scaleExtent([1, 8])
+			.translateExtent([
+				[0, 0],
+				[width, height],
+			])
+			.extent(myextent)
+			.filter(filter)
+			.on('zoom', zoomed),
+	)
+}
+
+// callback that is called when the user tries to pan/zoom in the window
+function zoomed(event: D3ZoomEvent<SVGGElement, unknown>) {
+	mytransform.value = event.transform
+}
+
+// prevent scrolling then apply the default filter
+function filter(event: PointerEvent | WheelEvent) {
+	event.preventDefault()
+	return (!event.ctrlKey || event.type === 'wheel') && !event.button
+}
+
 function zoomGraph() {
+	globalConfig.zoomedWidget = 1
 	globalConfig.zoomGraph = !globalConfig.zoomGraph
 }
+
+onMounted(() => {
+	const svg = select<Element, unknown>('svg#powergraph')
+	setZoom(svg)
+})
 </script>
 
 <style scoped>
@@ -163,12 +201,13 @@ function zoomGraph() {
 	color: var(--color-menu);
 }
 
-.datebadge {
+.dateWbBadge {
 	background-color: var(--color-menu);
 	color: var(--color-bg);
 	font-size: var(--font-medium);
 	font-weight: normal;
 }
+
 .waitsign {
 	text-align: center;
 	font-size: var(--font-medium);

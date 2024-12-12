@@ -5,7 +5,6 @@ import {
 	chargeTemplates,
 	evTemplates,
 	Vehicle,
-	ChargeMode,
 	type ChargeTimePlan,
 	scheduledChargingPlans,
 	timeChargingPlans,
@@ -16,6 +15,7 @@ import type {
 	EvTemplate,
 	ChargeSchedule,
 } from './model'
+import { ChargeMode } from '@/assets/js/types'
 
 export function processChargepointMessages(topic: string, message: string) {
 	const index = getIndex(topic)
@@ -156,7 +156,11 @@ export function processVehicleMessages(topic: string, message: string) {
 			// set soc for cp
 			vehicles[index].soc = JSON.parse(message)
 		} else if (topic.match(/^openwb\/vehicle\/[0-9]+\/get\/range$/i)) {
-			vehicles[index].range = +message
+			if (isNaN(+message)) {
+				vehicles[index].range = 0
+			} else {
+				vehicles[index].range = +message
+			}
 		} else if (topic.match(/^openwb\/vehicle\/[0-9]+\/charge_template$/i)) {
 			vehicles[index].updateChargeTemplateId(+message)
 		} else if (topic.match(/^openwb\/vehicle\/[0-9]+\/ev_template$/i)) {

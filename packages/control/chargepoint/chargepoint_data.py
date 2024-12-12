@@ -72,10 +72,15 @@ class Log:
     imported_since_plugged: float = 0
     range_charged: float = 0
     time_charged: str = "00:00"
-    timestamp_start_charging: Optional[str] = None
+    timestamp_start_charging: Optional[float] = None
     ev: int = -1
     prio: bool = False
     rfid: Optional[str] = None
+    serial_number: Optional[str] = None
+    soc_at_start: Optional[int] = None
+    soc_at_end: Optional[int] = None
+    range_at_start: Optional[float] = None
+    range_at_end: Optional[float] = None
 
 
 def connected_vehicle_factory() -> ConnectedVehicle:
@@ -85,10 +90,14 @@ def connected_vehicle_factory() -> ConnectedVehicle:
 @dataclass
 class Get:
     charge_state: bool = False
+    charging_current: Optional[float] = 0
+    charging_power: Optional[float] = 0
+    charging_voltage: Optional[float] = 0
     connected_vehicle: ConnectedVehicle = field(default_factory=connected_vehicle_factory)
     currents: List[float] = field(default_factory=currents_list_factory)
     daily_imported: float = 0
     daily_exported: float = 0
+    error_timestamp: int = 0
     evse_current: Optional[float] = None
     exported: float = 0
     fault_str: str = NO_ERROR
@@ -99,6 +108,7 @@ class Get:
     power: float = 0
     rfid_timestamp: Optional[float] = None
     rfid: Optional[int] = None
+    serial_number: Optional[str] = None
     soc: Optional[float] = None
     soc_timestamp: Optional[int] = None
     state_str: Optional[str] = None
@@ -116,7 +126,6 @@ def log_factory() -> Log:
 
 @dataclass
 class Set:
-    change_ev_permitted: bool = False
     charging_ev: int = -1
     charging_ev_prev: int = -1
     current: float = 0
@@ -129,22 +138,24 @@ class Set:
     plug_time: Optional[float] = None
     required_power: float = 0
     rfid: Optional[str] = None
-    target_current: float = 0  # Sollstrom aus fest vorgegebener Stromstärke
+    target_current: float = 0  # Soll-Strom aus fest vorgegebener Stromstärke
     charging_ev_data: Ev = field(default_factory=ev_factory)
+    ocpp_transaction_id: Optional[int] = None
 
 
 @dataclass
 class Config:
     configuration: Dict = field(default_factory=empty_dict_factory)
     ev: int = 0
-    name: str = "Standard-Ladepunkt"
+    name: str = "neuer Ladepunkt"
     type: Optional[str] = None
     template: int = 0
     connected_phases: int = 3
-    phase_1: int = 0
+    phase_1: int = 1
     auto_phase_switch_hw: bool = False
     control_pilot_interruption_hw: bool = False
     id: int = 0
+    ocpp_chargebox_id: Optional[str] = None
 
     def __post_init__(self):
         self.event_update_state: threading.Event

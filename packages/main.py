@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """Starten der benötigten Prozesse
 """
+# flake8: noqa: F402
 import logging
+from helpermodules import logger
+from helpermodules.utils import thread_handler
+# als erstes logging initialisieren, damit auch ImportError geloggt werden
+logger.setup_logging()
+log = logging.getLogger()
+
 from pathlib import Path
 from random import randrange
 import schedule
@@ -11,31 +18,20 @@ import traceback
 from threading import Thread
 from control.chargelog.chargelog import calculate_charge_cost
 
-from helpermodules.changed_values_handler import ChangedValuesHandler
-from helpermodules.measurement_logging.update_daily_yields import update_daily_yields
+from control import data, prepare, process
+from control.algorithm import algorithm
+from helpermodules import command, setdata, subdata, timecheck, update_config
+from helpermodules.changed_values_handler import ChangedValuesContext
+from helpermodules.measurement_logging.update_yields import update_daily_yields, update_pv_monthly_yearly_yields
 from helpermodules.measurement_logging.write_log import LogType, save_log
-from modules import loadvars
-from modules import configuration
-from helpermodules import timecheck, update_config
-from helpermodules import subdata
-from helpermodules import setdata
-from helpermodules import logger
-from helpermodules import command
 from helpermodules.modbusserver import start_modbus_server
 from helpermodules.pub import Pub
-from control import prepare
-from control import data
-from control import process
-from control.algorithm import algorithm
 from helpermodules.utils import exit_after
-from modules import update_soc
+from modules import configuration, loadvars, update_soc
 from modules.internal_chargepoint_handler.internal_chargepoint_handler import GeneralInternalChargepointHandler
 from modules.internal_chargepoint_handler.rfid import RfidReader
 from modules.utils import wait_for_module_update_completed
 from smarthome.smarthome import readmq, smarthome_handler
-
-logger.setup_logging()
-log = logging.getLogger()
 
 
 class HandlerAlgorithm:
@@ -52,27 +48,26 @@ class HandlerAlgorithm:
                 if (data.data.general_data.data.control_interval / 10) == self.interval_counter:
                     data.data.copy_data()
                     loadvars_.get_values()
-                    changed_values_handler.pub_changed_values()
                     wait_for_module_update_completed(loadvars_.event_module_update_completed,
                                                      "openWB/set/system/device/module_update_completed")
                     data.data.copy_data()
-                    changed_values_handler.store_initial_values()
-                    self.heartbeat = True
-                    if data.data.system_data["system"].data["perform_update"]:
-                        data.data.system_data["system"].perform_update()
-                        return
-                    elif data.data.system_data["system"].data["update_in_progress"]:
-                        log.info("Regelung pausiert, da ein Update durchgeführt wird.")
-                    event_global_data_initialized.set()
-                    prep.setup_algorithm()
-                    control.calc_current()
-                    proc.process_algorithm_results()
-                    data.data.graph_data.pub_graph_data()
-                    changed_values_handler.pub_changed_values()
+                    with ChangedValuesContext(loadvars_.event_module_update_completed):
+                        self.heartbeat = True
+                        if data.data.system_data["system"].data["perform_update"]:
+                            data.data.system_data["system"].perform_update()
+                            return
+                        elif data.data.system_data["system"].data["update_in_progress"]:
+                            log.info("Regelung pausiert, da ein Update durchgeführt wird.")
+                        event_global_data_initialized.set()
+                        prep.setup_algorithm()
+                        control.calc_current()
+                        proc.process_algorithm_results()
+                        data.data.graph_data.pub_graph_data()
                     self.interval_counter = 1
                 else:
                     self.interval_counter = self.interval_counter + 1
             log.info("# ***Start*** ")
+            log.debug(f"Threads: {threading.enumerate()}")
             Pub().pub("openWB/set/system/time", timecheck.create_timestamp())
             handler_with_control_interval()
         except KeyboardInterrupt:
@@ -86,13 +81,14 @@ class HandlerAlgorithm:
         ausführt, die nur alle 5 Minuten ausgeführt werden müssen.
         """
         try:
-            changed_values_handler.store_initial_values()
-            totals = save_log(LogType.DAILY)
-            update_daily_yields(totals)
-            data.data.general_data.grid_protection()
-            data.data.optional_data.et_get_prices()
-            data.data.counter_all_data.validate_hierarchy()
-            changed_values_handler.pub_changed_values()
+            with ChangedValuesContext(loadvars_.event_module_update_completed):
+                totals = save_log(LogType.DAILY)
+                update_daily_yields(totals)
+                update_pv_monthly_yearly_yields()
+                data.data.general_data.grid_protection()
+                data.data.optional_data.et_get_prices()
+                data.data.optional_data.ocpp_transfer_meter_values()
+                data.data.counter_all_data.validate_hierarchy()
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
         except Exception:
@@ -108,25 +104,26 @@ class HandlerAlgorithm:
             if not sub.heartbeat:
                 log.error("Heartbeat für Subdata nicht zurückgesetzt.")
                 sub.disconnect()
-                Thread(target=sub.sub_topics, args=(), name="Subdata").start()
+                thread_handler(Thread(target=sub.sub_topics, args=(), name="Subdata"))
             else:
                 sub.heartbeat = False
 
             if not set.heartbeat:
                 log.error("Heartbeat für Setdata nicht zurückgesetzt.")
                 set.disconnect()
-                Thread(target=set.set_data, args=(), name="Setdata").start()
+                thread_handler(Thread(target=set.set_data, args=(), name="Setdata"))
             else:
                 set.heartbeat = False
 
             if sub.internal_chargepoint_data["global_data"].configured:
                 if not general_internal_chargepoint_handler.internal_chargepoint_handler.heartbeat:
                     log.error("Heartbeat für Internen Ladepunkt nicht zurückgesetzt.")
+                    general_internal_chargepoint_handler.event_stop.set()
                     general_internal_chargepoint_handler.event_start.set()
                 else:
                     general_internal_chargepoint_handler.internal_chargepoint_handler.heartbeat = False
-
-            sub.system_data["system"].update_ip_address()
+            with ChangedValuesContext(loadvars_.event_module_update_completed):
+                sub.system_data["system"].update_ip_address()
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
         except Exception:
@@ -144,7 +141,7 @@ class HandlerAlgorithm:
     @exit_after(10)
     def handler_random_nightly(self):
         try:
-            data.data.system_data["system"].create_backup_and_send_to_cloud()
+            data.data.system_data["system"].thread_backup_and_send_to_cloud()
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
         except Exception:
@@ -153,8 +150,9 @@ class HandlerAlgorithm:
     @exit_after(10)
     def handler_hour(self):
         try:
-            for cp in data.data.cp_data.values():
-                calculate_charge_cost(cp)
+            with ChangedValuesContext(loadvars_.event_module_update_completed):
+                for cp in data.data.cp_data.values():
+                    calculate_charge_cost(cp)
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
         except Exception:
@@ -192,7 +190,6 @@ try:
     prep = prepare.Prepare()
     general_internal_chargepoint_handler = GeneralInternalChargepointHandler()
     rfid = RfidReader()
-    changed_values_handler = ChangedValuesHandler(loadvars_.event_module_update_completed)
     event_ev_template = threading.Event()
     event_ev_template.set()
     event_charge_template = threading.Event()
@@ -253,8 +250,10 @@ try:
     event_update_config_completed.wait(300)
     Pub().pub("openWB/set/system/boot_done", True)
     Path(Path(__file__).resolve().parents[1]/"ramdisk"/"bootdone").touch()
-    changed_values_handler.store_initial_values()
     schedule_jobs()
+    if event_jobs_running.is_set():
+        # Nach dem Starten als erstes den 10Sek-Handler aufrufen, damit die Werte der data.data initialisiert werden.
+        handler.handler10Sec()
 except Exception:
     log.exception("Fehler im Main-Modul")
 

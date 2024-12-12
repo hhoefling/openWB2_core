@@ -4,16 +4,26 @@
 			{{ heading }}
 		</template>
 		<template #buttons>
-			<PgSelector
-				widgetid="graphsettings"
-				:show-left-button="true"
-				:show-right-button="true"
-				:ignore-live="true"
-				@shift-left="shiftLeft"
-				@shift-right="shiftRight"
-				@shift-up="shiftUp"
-				@shift-down="shiftDown"
-			/>
+			<div class="d-flex justify-content-end">
+				<PgSelector
+					widgetid="graphsettings"
+					:show-left-button="true"
+					:show-right-button="true"
+					:ignore-live="true"
+					@shift-left="shiftLeft"
+					@shift-right="shiftRight"
+					@shift-up="shiftUp"
+					@shift-down="shiftDown"
+				/>
+				<span
+					v-if="widescreen"
+					type="button"
+					class="ms-1 p-0 pt-1"
+					@click="zoomGraph"
+				>
+					<span class="fa-solid fa-lg ps-1 fa-magnifying-glass" />
+				</span>
+			</div>
 		</template>
 		<figure id="energymeter" class="p-0 m-0">
 			<svg viewBox="0 0 500 500">
@@ -70,7 +80,7 @@ import EMYAxis from './EMYAxis.vue'
 import EMLabels from './EMLabels.vue'
 import WBWidget from '../shared/WBWidget.vue'
 import PgSelector from '../powerGraph/PgSelector.vue'
-import { globalConfig } from '@/assets/js/themeConfig'
+import { globalConfig, widescreen } from '@/assets/js/themeConfig'
 import {
 	shiftLeft,
 	shiftRight,
@@ -96,17 +106,10 @@ const axisFontsize = 12
 const plotdata = computed(() => {
 	let sources = Object.values(sourceSummary)
 	let usage = usageDetails.value
-	let historic = historicSummary.values()
+	const historic = historicSummary.items
 	let result: PowerItem[] = []
-
 	if (globalConfig.debug) {
-		console.debug('----------------------- source summary -----------------')
-		console.debug(sourceSummary)
-		console.debug('----------------------- usage details ------------------')
-		console.debug(usageDetails.value)
-		console.debug('----------------------- historic summary ---------------')
-		console.debug(historicSummary)
-		console.debug('--------------------------------------------------------')
+		printDebugOutput()
 	}
 	if (energyMeterNeedsRedraw.value == true) {
 		energyMeterNeedsRedraw.value = false
@@ -115,19 +118,40 @@ const plotdata = computed(() => {
 		default:
 		case 'live':
 		case 'today':
-			result = sources.concat(usage).filter((row) => row.energy > 0)
+			result = sources.concat(usage)
 			break
 		case 'day':
 		case 'month':
 		case 'year':
-			if (historic.length == 0) {
+			if (Object.values(historic).length == 0) {
 				noData.value = true
 			} else {
 				noData.value = false
-				result = historic.filter((row) => row.energy > 0)
+				result = [
+					historic.evuIn,
+					historic.pv,
+					historic.evuOut,
+					historic.batOut,
+					historic.charging,
+				]
+				if (Object.values(chargePoints).length > 1) {
+					Object.keys(chargePoints).forEach((id) => {
+						if (historic['cp' + id]) {
+							result.push(historic['cp' + id])
+						}
+					})
+				}
+
+				result.push(historic.devices)
+				shDevices.forEach((dev, id) => {
+					if (dev.showInGraph && historic['sh' + id]) {
+						result.push(historic['sh' + id])
+					}
+				})
+				result = result.concat([historic.batIn, historic.house])
 			}
 	}
-	return result
+	return result.filter((row) => row.energy && row.energy > 0)
 })
 const xScale = computed(() => {
 	return scaleBand()
@@ -142,26 +166,45 @@ const yScale = computed(() => {
 })
 const heading = 'Energie'
 
-const usageDetails = computed(() => {
-	const cpcount = Object.values(chargePoints).length
-	const shcount = Object.values(shDevices).filter(
-		(dev) => dev.configured,
-	).length
-	return [usageSummary.evuOut, usageSummary.devices, usageSummary.charging]
-		.concat(
-			cpcount > 1
-				? Object.values(chargePoints).map((cp) => cp.toPowerItem())
-				: [],
-		)
-		.concat(
-			shcount > 1
-				? Object.values(shDevices).filter(
-						(row) => row.configured && row.showInGraph,
-				  )
-				: [],
-		)
-		.concat([usageSummary.batIn, usageSummary.house])
-})
+const usageDetails = computed(
+	() => {
+		const cpcount = Object.values(chargePoints).length
+		const shcount = [...shDevices.values()].filter(
+			(dev) => dev.configured,
+		).length
+		let usg = usageSummary
+		return [
+			...[usg.evuOut, usg.charging].concat(
+				cpcount > 1
+					? Object.values(chargePoints).map((cp) => cp.toPowerItem())
+					: [],
+			),
+			...[usg.devices]
+				.concat(
+					shcount > 1
+						? [...shDevices.values()].filter(
+								(row) => row.configured && row.showInGraph,
+							)
+						: [],
+				)
+				.concat([usageSummary.batIn, usageSummary.house]),
+		]
+	},
+	//}
+)
+function printDebugOutput() {
+	console.debug(['source summary:', sourceSummary])
+	console.debug(['usage details:', usageDetails.value])
+	console.debug(['historic summary:', historicSummary])
+}
+function zoomGraph() {
+	globalConfig.zoomedWidget = 2
+	globalConfig.zoomGraph = !globalConfig.zoomGraph
+}
 </script>
 
-<style scoped></style>
+<style scoped>
+.fa-magnifying-glass {
+	color: var(--color-menu);
+}
+</style>
