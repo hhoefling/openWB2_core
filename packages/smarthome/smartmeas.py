@@ -512,15 +512,15 @@ class Slsdm630(Slbase):
         try:
             # neu aus openwb 2.0
             with modbus.ModbusTcpClient_(self._device_measureip, self._device_measureportsdm) as tcp_client:
-                sdm630 = sdm.Sdm630_72(self._device_measureid, tcp_client)
+                sdm630 = sdm.Sdm630_72(self._device_measureid, tcp_client, None)
                 # log.warning(" sdm630 id %s " % ( str(id(sdm630))))
                 _, newwatt = sdm630.get_power()
                 self.newwatt = int(newwatt)
                 self.newwattk = int(sdm630.get_imported())
-        except Exception as e1:
-            log.warning("Leistungsmessung %s %d %s Fehlermeldung: %s "
-                        % ('Sdm630 ', self.device_nummer,
-                           str(self._device_measureip), str(e1)))
+        except Exception:
+            log.exception("Leistungsmessung %s %d %s "
+                          % ('Sdm630 ', self.device_nummer,
+                             str(self._device_measureip)))
         return self.newwatt, self.newwattk
 
 
@@ -533,12 +533,12 @@ class Slsdm120(Slbase):
         try:
             # neu aus openwb 2.0
             with modbus.ModbusTcpClient_(self._device_measureip, self._device_measureportsdm) as tcp_client:
-                sdm120 = sdm.Sdm120(self._device_measureid, tcp_client)
+                sdm120 = sdm.Sdm120(self._device_measureid, tcp_client, None)
                 _, newwatt = sdm120.get_power()
                 self.newwatt = int(newwatt)
                 self.newwattk = int(sdm120.get_imported())
-        except Exception as e1:
-            log.warning("Leistungsmessung %s %d %s Fehlermeldung: %s "
-                        % ('Sdm120 ', self.device_nummer,
-                           str(self._device_measureip), str(e1)))
+        except Exception:
+            log.exception("Leistungsmessung %s %d %s "
+                          % ('Sdm120 ', self.device_nummer,
+                             str(self._device_measureip)))
         return self.newwatt, self.newwattk

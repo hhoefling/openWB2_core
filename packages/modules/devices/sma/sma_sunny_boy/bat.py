@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-from typing import Dict, Union
+import logging
+from typing import TypedDict, Any
 
-from dataclass_utils import dataclass_from_dict
 from modules.common.abstract_device import AbstractBat
 from modules.common.component_state import BatState
 from modules.common.component_type import ComponentDescriptor
@@ -10,14 +10,22 @@ from modules.common.modbus import ModbusTcpClient_, ModbusDataType
 from modules.common.store import get_bat_value_store
 from modules.devices.sma.sma_sunny_boy.config import SmaSunnyBoyBatSetup
 
+log = logging.getLogger(__name__)
+
+
+class KwargsDict(TypedDict):
+    client: ModbusTcpClient_
+
 
 class SunnyBoyBat(AbstractBat):
-    def __init__(self,
-                 device_id: int,
-                 component_config: Union[Dict, SmaSunnyBoyBatSetup],
-                 tcp_client: ModbusTcpClient_) -> None:
-        self.component_config = dataclass_from_dict(SmaSunnyBoyBatSetup, component_config)
-        self.__tcp_client = tcp_client
+    SMA_UINT_64_NAN = 0xFFFFFFFFFFFFFFFF  # SMA uses this value to represent NaN
+
+    def __init__(self, component_config: SmaSunnyBoyBatSetup, **kwargs: Any) -> None:
+        self.component_config = component_config
+        self.kwargs: KwargsDict = kwargs
+
+    def initialize(self) -> None:
+        self.__tcp_client: ModbusTcpClient_ = self.kwargs['client']
         self.store = get_bat_value_store(self.component_config.id)
         self.fault_state = FaultState(ComponentInfo.from_component_config(self.component_config))
 
@@ -35,12 +43,19 @@ class SunnyBoyBat(AbstractBat):
         exported = self.__tcp_client.read_holding_registers(31401, ModbusDataType.UINT_64, unit=unit)
         imported = self.__tcp_client.read_holding_registers(31397, ModbusDataType.UINT_64, unit=unit)
 
-        return BatState(
+        if exported == self.SMA_UINT_64_NAN or imported == self.SMA_UINT_64_NAN:
+            raise ValueError(f'Batterie lieferte nicht plausible Werte. Export: {exported}, Import: {imported}. ',
+                             'Sobald die Batterie geladen/entladen wird sollte sich dieser Wert ändern, ',
+                             'andernfalls kann ein Defekt vorliegen.')
+
+        bat_state = BatState(
             power=power,
             soc=soc,
             imported=imported,
             exported=exported
         )
+        log.debug("Bat {}: {}".format(self.__tcp_client.address, bat_state))
+        return bat_state
 
     def update(self) -> None:
         self.store.set(self.read())

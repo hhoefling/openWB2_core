@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Starten der benötigten Prozesse
 """
-# flake8: noqa: F402
+# flake8: noqa: E402
 import logging
 from helpermodules import logger
-from helpermodules.utils import thread_handler
+from helpermodules.utils import run_command, thread_handler
+import threading
+import sys
+
 # als erstes logging initialisieren, damit auch ImportError geloggt werden
 logger.setup_logging()
 log = logging.getLogger()
@@ -13,9 +16,8 @@ from pathlib import Path
 from random import randrange
 import schedule
 import time
-import threading
+from threading import Event, Thread, enumerate
 import traceback
-from threading import Thread
 from control.chargelog.chargelog import calculate_charge_cost
 
 from control import data, prepare, process
@@ -29,6 +31,7 @@ from helpermodules.pub import Pub
 from helpermodules.utils import exit_after
 from modules import configuration, loadvars, update_soc
 from modules.internal_chargepoint_handler.internal_chargepoint_handler import GeneralInternalChargepointHandler
+from modules.internal_chargepoint_handler.gpio import InternalGpioHandler
 from modules.internal_chargepoint_handler.rfid import RfidReader
 from modules.utils import wait_for_module_update_completed
 from smarthome.smarthome import readmq, smarthome_handler
@@ -67,7 +70,20 @@ class HandlerAlgorithm:
                 else:
                     self.interval_counter = self.interval_counter + 1
             log.info("# ***Start*** ")
-            log.debug(f"Threads: {threading.enumerate()}")
+            log.debug(run_command.run_shell_command("top -b -n 1 | head -n 20"))
+            log.debug(f'Drosselung: {run_command.run_shell_command("vcgencmd get_throttled")}')
+            log.debug(f"Threads: {enumerate()}")
+            for thread in threading.enumerate():
+                logging.debug(f"Thread Name: {thread.name}")
+                if hasattr(thread, "ident"):
+                    thread_id = thread.ident
+                    for tid, frame in sys._current_frames().items():
+                        if tid == thread_id:
+                            logging.debug(f"  File: {frame.f_code.co_filename}, Line: {frame.f_lineno}, Function: {frame.f_code.co_name}")
+                            stack_trace = traceback.format_stack(frame)
+                            logging.debug("  Stack Trace:")
+                            for line in stack_trace:
+                                logging.debug(line.strip())
             Pub().pub("openWB/set/system/time", timecheck.create_timestamp())
             handler_with_control_interval()
         except KeyboardInterrupt:
@@ -86,7 +102,6 @@ class HandlerAlgorithm:
                 update_daily_yields(totals)
                 update_pv_monthly_yearly_yields()
                 data.data.general_data.grid_protection()
-                data.data.optional_data.et_get_prices()
                 data.data.optional_data.ocpp_transfer_meter_values()
                 data.data.counter_all_data.validate_hierarchy()
         except KeyboardInterrupt:
@@ -133,6 +148,9 @@ class HandlerAlgorithm:
     def handler_midnight(self):
         try:
             save_log(LogType.MONTHLY)
+            thread_errors_path = Path(Path(__file__).resolve().parents[1]/"ramdisk"/"thread_errors.log")
+            with thread_errors_path.open("w") as f:
+                f.write("")
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
         except Exception:
@@ -153,6 +171,7 @@ class HandlerAlgorithm:
             with ChangedValuesContext(loadvars_.event_module_update_completed):
                 for cp in data.data.cp_data.values():
                     calculate_charge_cost(cp)
+            data.data.optional_data.et_get_prices()
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
         except Exception:
@@ -190,45 +209,40 @@ try:
     prep = prepare.Prepare()
     general_internal_chargepoint_handler = GeneralInternalChargepointHandler()
     rfid = RfidReader()
-    event_ev_template = threading.Event()
+    event_ev_template = Event()
     event_ev_template.set()
-    event_charge_template = threading.Event()
-    event_charge_template.set()
-    event_cp_config = threading.Event()
+    event_cp_config = Event()
     event_cp_config.set()
-    event_scheduled_charging_plan = threading.Event()
-    event_scheduled_charging_plan.set()
-    event_time_charging_plan = threading.Event()
-    event_time_charging_plan.set()
-    event_soc = threading.Event()
+    event_soc = Event()
     event_soc.set()
-    event_copy_data = threading.Event()  # set: Kopieren abgeschlossen, reset: es wird kopiert
+    event_copy_data = Event()  # set: Kopieren abgeschlossen, reset: es wird kopiert
     event_copy_data.set()
-    event_global_data_initialized = threading.Event()
-    event_command_completed = threading.Event()
+    event_global_data_initialized = Event()
+    event_command_completed = Event()
     event_command_completed.set()
-    event_subdata_initialized = threading.Event()
-    event_update_config_completed = threading.Event()
-    event_modbus_server = threading.Event()
-    event_jobs_running = threading.Event()
+    event_subdata_initialized = Event()
+    event_update_config_completed = Event()
+    event_modbus_server = Event()
+    event_jobs_running = Event()
     event_jobs_running.set()
-    event_update_soc = threading.Event()
+    event_update_soc = Event()
+    event_restart_gpio = Event()
+    gpio = InternalGpioHandler(event_restart_gpio)
     prep = prepare.Prepare()
     soc = update_soc.UpdateSoc(event_update_soc)
-    set = setdata.SetData(event_ev_template, event_charge_template,
-                          event_cp_config, event_scheduled_charging_plan, event_time_charging_plan, event_soc,
+    set = setdata.SetData(event_ev_template,
+                          event_cp_config, event_soc,
                           event_subdata_initialized)
-    sub = subdata.SubData(event_ev_template, event_charge_template,
+    sub = subdata.SubData(event_ev_template,
                           event_cp_config, loadvars_.event_module_update_completed,
                           event_copy_data, event_global_data_initialized, event_command_completed,
                           event_subdata_initialized, soc.event_vehicle_update_completed,
-                          event_scheduled_charging_plan, event_time_charging_plan,
                           general_internal_chargepoint_handler.event_start,
                           general_internal_chargepoint_handler.event_stop,
                           event_update_config_completed,
                           event_update_soc,
                           event_soc,
-                          event_jobs_running, event_modbus_server)
+                          event_jobs_running, event_modbus_server, event_restart_gpio)
     comm = command.Command(event_command_completed)
     t_sub = Thread(target=sub.sub_topics, args=(), name="Subdata")
     t_set = Thread(target=set.set_data, args=(), name="Setdata")
@@ -237,17 +251,21 @@ try:
     t_internal_chargepoint = Thread(target=general_internal_chargepoint_handler.handler,
                                     args=(), name="Internal Chargepoint")
     if rfid.keyboards_detected:
-        t_rfid = Thread(target=rfid.run, args=(), name="Internal Chargepoint")
+        t_rfid = Thread(target=rfid.run, args=(), name="Internal RFID")
         t_rfid.start()
+
+    t_gpio = Thread(target=gpio.loop, args=(), name="Internal GPIO")
+    t_gpio.start()
 
     t_sub.start()
     t_set.start()
     t_comm.start()
     t_soc.start()
     t_internal_chargepoint.start()
-    threading.Thread(target=start_modbus_server, args=(event_modbus_server,), name="Modbus Control Server").start()
+    Thread(target=start_modbus_server, args=(event_modbus_server,), name="Modbus Control Server").start()
     # Warten, damit subdata Zeit hat, alle Topics auf dem Broker zu empfangen.
     event_update_config_completed.wait(300)
+    event_subdata_initialized.wait(300)
     Pub().pub("openWB/set/system/boot_done", True)
     Path(Path(__file__).resolve().parents[1]/"ramdisk"/"bootdone").touch()
     schedule_jobs()

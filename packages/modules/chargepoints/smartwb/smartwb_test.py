@@ -28,7 +28,8 @@ class TestSmartWb:
         plug_state=True,
         charge_state=False,
         phases_in_use=3,
-        serial_number="94:B9:7E:69:F0:D1"
+        serial_number="94:B9:7E:69:F0:D1",
+        max_evse_current=32
     )
     SAMPLE_V1 = {
         "type": "parameters",
@@ -60,8 +61,8 @@ class TestSmartWb:
         plug_state=True,
         charge_state=True,
         rfid="0a1b2c3d",
-        rfid_timestamp=1652683252,
-        serial_number="94:B9:7E:69:F0:D1"
+        serial_number="94:B9:7E:69:F0:D1",
+        max_evse_current=16
     )
     SAMPLE_V2 = {
         "type": "parameters",
@@ -98,9 +99,9 @@ class TestSmartWb:
         plug_state=True,
         charge_state=True,
         rfid="0a1b2c3d",
-        rfid_timestamp=1652683252,
-        phases_in_use=1,
-        serial_number="94:B9:7E:69:F0:D1"
+        phases_in_use=None,
+        serial_number="94:B9:7E:69:F0:D1",
+        max_evse_current=16
     )
     SAMPLE_NOT_CHARGING_V2 = {
         "type": "parameters",

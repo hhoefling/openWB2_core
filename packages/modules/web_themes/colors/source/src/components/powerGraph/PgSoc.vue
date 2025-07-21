@@ -1,31 +1,35 @@
 <template>
-	<path
-		:id="'soc-' + vID"
-		.origin="autozoom"
-		class="soc-baseline"
-		:d="myline"
-		stroke="var(--color-bg)"
-		stroke-width="1"
-		fill="none"
-	/>
-	<path
-		:id="'socdashes-' + vID"
-		class="soc-dashes"
-		:d="myline"
-		:stroke="cpColor"
-		stroke-width="1"
-		:style="{ strokeDasharray: '3,3' }"
-		fill="none"
-	/>
-	<text
-		class="cpname"
-		:x="nameX"
-		:y="nameY"
-		:style="{ fill: cpColor, fontSize: 10 }"
-		:text-anchor="textPosition"
-	>
-		{{ vName }}
-	</text>
+	<svg x="0" :width="props.width">
+		<g>
+			<path
+				:id="'soc-' + vID"
+				.origin="autozoom"
+				class="soc-baseline"
+				:d="myline"
+				stroke="var(--color-bg)"
+				stroke-width="1"
+				fill="none"
+			/>
+			<path
+				:id="'socdashes-' + vID"
+				class="soc-dashes"
+				:d="myline"
+				:stroke="cpColor"
+				stroke-width="1"
+				:style="{ strokeDasharray: '3,3' }"
+				fill="none"
+			/>
+			<text
+				class="cpname"
+				:x="nameX"
+				:y="nameY"
+				:style="{ fill: cpColor, fontSize: 10 }"
+				:text-anchor="textPosition"
+			>
+				{{ vName }}
+			</text>
+		</g>
+	</svg>
 </template>
 
 <script setup lang="ts">
@@ -73,7 +77,6 @@ const myline = computed(() => {
 							: d['soc' + topVehicles.value[1]!],
 				) ?? yScale.value(0),
 		)
-
 	let p = path(graphData.data)
 	return p ? p : ''
 })
@@ -85,16 +88,16 @@ const vName = computed(() => {
 		case 2:
 			return 'Speicher'
 		case 1:
-			if (vehicles[topVehicles.value[1]]) {
+			if (vehicles[topVehicles.value[1]] != undefined) {
 				return vehicles[topVehicles.value[1]].name
 			} else {
-				return 'oops'
+				return '???'
 			}
 		default:
-			if (vehicles[topVehicles.value[0]]) {
+			if (vehicles[topVehicles.value[0]] != undefined) {
 				return vehicles[topVehicles.value[0]].name
 			} else {
-				return 'hhhm'
+				return '???'
 			}
 	}
 })
@@ -113,12 +116,12 @@ const cpColor = computed(() => {
 })
 const nameX = computed(() => {
 	switch (props.order) {
-		case 1:
-			return props.width - 3
 		case 0:
-			return 3
+			return 3 // x position of first vehicle
+		case 1:
+			return props.width - 3 // x position of 2nd vehicle
 		case 2:
-			return props.width / 2
+			return props.width / 2 // x position of battery
 		default:
 			return 0 // error
 	}
@@ -128,15 +131,16 @@ const nameY = computed(() => {
 	if (graphData.data.length > 0) {
 		let index: number
 		switch (props.order) {
-			case 0:
-				index = graphData.data.length - 1
+			case 0: // 1st vehicle
+				index = 0
 				return yScale.value(
 					graphData.data[index]['soc' + topVehicles.value[0]] + 2,
 				)
 			case 1:
-				index = 0
-				return yScale.value(
-					graphData.data[index]['soc' + topVehicles.value[1]] + 2,
+				index = graphData.data.length - 1
+				return Math.max(
+					12,
+					yScale.value(graphData.data[index]['soc' + topVehicles.value[1]] + 2),
 				)
 			case 2:
 				index = Math.round(graphData.data.length / 2)
@@ -151,9 +155,9 @@ const nameY = computed(() => {
 const textPosition = computed(() => {
 	switch (props.order) {
 		case 0:
-			return 'end'
-		case 1:
 			return 'start'
+		case 1:
+			return 'end'
 		case 2:
 			return 'middle'
 		default:

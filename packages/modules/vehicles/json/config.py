@@ -9,12 +9,14 @@ class JsonSocConfiguration:
             url: Optional[str] = None,
             soc_pattern: Optional[str] = None,
             range_pattern: Optional[str] = None,
+            timestamp_pattern: Optional[str] = None,
             timeout: Optional[int] = None,
             calculate_soc: bool = False
             ):
         self.url = url
         self.soc_pattern = soc_pattern
         self.range_pattern = range_pattern
+        self.timestamp_pattern = timestamp_pattern
         self.timeout = timeout
         self.calculate_soc = calculate_soc
 
@@ -24,7 +26,9 @@ class JsonSocSetup():
     def __init__(self,
                  name: str = "JSON",
                  type: str = "json",
+                 official: bool = True,
                  configuration: JsonSocConfiguration = None) -> None:
         self.name = name
         self.type = type
+        self.official = official
         self.configuration = configuration or JsonSocConfiguration()

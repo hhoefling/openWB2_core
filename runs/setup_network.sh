@@ -63,7 +63,7 @@ function setup_pnp_network() {
 }
 
 function check_internet_connection() {
-	if ping -c1 "www.openwb.de" &>/dev/null; then
+	if curl -s --head --connect-timeout 3 --request GET "https://www.github.com" >/dev/null; then
 		echo "Internet connection is up"
 	else
 		echo "ERROR: no internet connection!"
@@ -100,6 +100,8 @@ function setup_dhcpcd_proplus() {
 		echo "done"
 		echo "restarting dhcpcd"
 		sudo systemctl restart dhcpcd
+		sleep 5
+		sudo dhclient -1 eth0
 	fi
 }
 
@@ -113,6 +115,8 @@ function disable_dhcpcd_proplus() {
 		sudo sed -i "/$pattern_begin/,/$pattern_end/d" "$dhcpcd_config_target"
 		echo "restarting dhcpcd"
 		sudo systemctl restart dhcpcd
+		sleep 5
+		sudo dhclient -1 eth0
 	else
 		echo "no changes required"
 	fi

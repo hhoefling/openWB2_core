@@ -1,9 +1,11 @@
 <template>
 	<div class="content">
 		<div class="leftside">
-			<div v-show="globalConfig.graphToShow == 'powermeter'">
-				<PowerMeter></PowerMeter>
-			</div>
+			<!-- <div v-show="globalConfig.graphToShow == 'powermeter'">-->
+			<PowerMeter
+				v-show="globalConfig.graphToShow == 'powermeter'"
+			></PowerMeter>
+			<!--</div>-->
 			<div v-show="globalConfig.graphToShow == 'powergraph'">
 				<PowerGraph></PowerGraph>
 			</div>
@@ -13,10 +15,10 @@
 		</div>
 
 		<div class="rightside">
-			<CPChargePoint
+			<ChargePoint
 				v-if="Object.values(chargePoints).length > globalConfig.cpToShow"
 				:chargepoint="Object.values(chargePoints)[globalConfig.cpToShow]"
-			></CPChargePoint>
+			></ChargePoint>
 		</div>
 	</div>
 	<ModalComponent modal-id="numberpad">
@@ -45,7 +47,7 @@
 	</ModalComponent>
 </template>
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onBeforeUnmount, onMounted } from 'vue'
 import { globalConfig, initConfig } from '@/assets/js/themeConfig'
 import { updateDimensions } from '@/assets/js/themeConfig'
 import PowerMeter from '@/components/powerMeter/PowerMeter.vue'
@@ -57,7 +59,7 @@ import StatusPage from '@/views/StatusPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
 import { msgInit } from '@/assets/js/processMessages'
 import { initGraph } from '@/components/powerGraph/model'
-import CPChargePoint from '@/components/chargePointList/CPChargePoint.vue'
+import ChargePoint from '@/components/chargePointList/ChargePoint.vue'
 import { chargePoints } from '@/components/chargePointList/model'
 import { displayConfig, checkCode } from '@/assets/js/model'
 
@@ -82,6 +84,10 @@ onMounted(() => {
 	//window.addEventListener('blur',lostFocus)
 	msgInit()
 })
+onBeforeUnmount(() => {
+	window.removeEventListener('focus', haveFocus)
+	window.removeEventListener('resize', updateDimensions)
+})
 function haveFocus() {
 	if (document.hasFocus()) {
 		//	console.log('I have focus')
@@ -102,11 +108,16 @@ function haveFocus() {
 .leftside {
 	min-width: 0px;
 	overflow: hidden;
+	height: 100%;
+	align-self: stretch;
 }
 
 .rightside {
 	min-width: 0px;
 	overflow: hidden;
+	height: 100%;
+	align-self: stretch;
+	align-items: stretch;
 }
 
 .settingstitle {

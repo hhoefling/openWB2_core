@@ -11,7 +11,6 @@ from control.chargepoint.chargepoint import Chargepoint, ChargepointData
 from control.chargepoint.chargepoint_data import Get, Set
 from control.chargepoint.chargepoint_template import CpTemplate
 from control.chargepoint.control_parameter import ControlParameter
-from control.ev.charge_template import ChargeTemplate
 from control.ev.ev import Ev
 
 
@@ -40,10 +39,8 @@ def test_filter_by_feed_in_limit(feed_in_limit_1: bool,
                                  expected_sorted: int):
     # setup
     def setup_cp(cp: Chargepoint, feed_in_limit: bool) -> Chargepoint:
-        ev = Ev(0)
-        ev.charge_template = ChargeTemplate(0)
-        ev.charge_template.data.chargemode.pv_charging.feed_in_limit = feed_in_limit
-        cp.data = ChargepointData(set=Set(charging_ev_data=ev))
+        cp.data = ChargepointData()
+        cp.data.set.charge_template.data.chargemode.pv_charging.feed_in_limit = feed_in_limit
         return cp
 
     cp1 = setup_cp(mock_cp1, feed_in_limit_1)
@@ -106,7 +103,7 @@ def test_set_required_current_to_max(phases: int,
     [
         pytest.param(None, 6, 6, id="Kein Soll-Strom aus der EVSE ausgelesen"),
         pytest.param(13, 13, 13, id="Auto lädt mit Soll-Stromstärke"),
-        pytest.param(12.5, 12.5, 12.5, id="Auto lädt mit 0.5A Abweichung von der Soll-Stromstärke"),
+        pytest.param(12.5, 12.5, 12.0, id="Auto lädt mit 0.5A Abweichung von der Soll-Stromstärke"),
         pytest.param(11.8, 11.8, 10.600000000000001, id="Auto lädt mit mehr als Soll-Stromstärke"),
         pytest.param(14.2, 14.2, 15.399999999999999, id="Auto lädt mit weniger als Soll-Stromstärke"),
         pytest.param(15, 15, 16,

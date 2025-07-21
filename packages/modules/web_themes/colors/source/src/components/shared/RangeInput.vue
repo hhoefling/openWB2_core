@@ -1,5 +1,5 @@
 <template>
-	<span class="d-flex flex-column">
+	<span class="d-flex flex-column rangeinput">
 		<span class="d-flex flex-fill justify-content-between align-items-center">
 			<span type="button" class="minusButton" @click="stepDown">
 				<i class="fa fa-xl fa-minus-square me-2" />
@@ -107,14 +107,7 @@ function stepUp() {
 	}
 }
 const subrangeScale = computed(() => {
-	console.log(props.subrangeMin)
-	console.log(props.subrangeMax)
-
 	const sc = scaleLinear().domain([props.min, props.max]).range([0, 100])
-
-	console.log(sc(props.subrangeMin ?? 0))
-	console.log(sc(props.subrangeMax ?? 0))
-
 	return sc
 })
 const subrangeX = computed(() => {
@@ -156,5 +149,8 @@ const subrangeWidth = computed(() => {
 	margin: 0px;
 	padding: 0px;
 	line-height: 10px;
+}
+.rangeinput {
+	width: 100%;
 }
 </style>

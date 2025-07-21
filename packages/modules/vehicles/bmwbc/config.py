@@ -17,9 +17,11 @@ class BMWbcConfiguration:
 
 class BMWbc:
     def __init__(self,
-                 name: str = "BMW (Bimmer)",
+                 name: str = "BMW & Mini ",
                  type: str = "bmwbc",
+                 official: bool = False,
                  configuration: BMWbcConfiguration = None) -> None:
         self.name = name
         self.type = type
+        self.official = official
         self.configuration = configuration or BMWbcConfiguration()
