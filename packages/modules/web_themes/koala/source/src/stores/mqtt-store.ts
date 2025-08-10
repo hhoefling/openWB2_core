@@ -16,7 +16,6 @@ import type {
   ChargePointConnectedVehicleInfo,
   Vehicle,
   VehicleInfo,
-  VehicleSocModuleConfig,
   ScheduledChargingPlan,
   ChargePointConnectedVehicleSoc,
   GraphDataPoint,
@@ -874,13 +873,13 @@ export const useMqttStore = defineStore('mqtt', () => {
 
   /**
    * trigger a force SOC update for the connected vehicle
+   * @param chargePointId charge point id
+   * @returns void
    */
   const chargePointConnectedVehicleForceSocUpdate = (chargePointId: number) => {
     const vehicleId = chargePointConnectedVehicleInfo(chargePointId).value?.id;
     if (vehicleId !== undefined) {
-      const topic = `openWB/vehicle/${vehicleId}/get/force_soc_update`;
-      console.log(topic);
-      sendTopicToBroker(topic, 1);
+      vehicleForceSocUpdate(vehicleId);
     }
   };
 
@@ -979,7 +978,7 @@ export const useMqttStore = defineStore('mqtt', () => {
    */
   const convertDcCurrentToPower = (dcCurrent: number): number => {
     return Math.round((dcCurrent * 3 * 230) / 1000);
-  }
+  };
 
   /**
    * Converts power in Kilowatts to DC current in Ampere.
@@ -992,8 +991,8 @@ export const useMqttStore = defineStore('mqtt', () => {
    * @returns number
    */
   const convertPowerToDcCurrent = (power: number): number => {
-    return Math.round(power * 1000 / (230 * 3));
-  }
+    return Math.round((power * 1000) / (230 * 3));
+  };
 
   /**
    * Get or set the charge point connected vehicle instant charging DC power identified by the charge point id
@@ -1766,10 +1765,7 @@ export const useMqttStore = defineStore('mqtt', () => {
       const vehicleId =
         chargePointConnectedVehicleInfo(chargePointId).value?.id;
       if (vehicleId === undefined) return undefined;
-      const socConfig = getValue.value(
-        `openWB/vehicle/${vehicleId}/soc_module/config`,
-      ) as { type: string } | null;
-      return socConfig?.type;
+      return vehicleSocType.value(vehicleId);
     });
   };
 
@@ -2026,14 +2022,25 @@ export const useMqttStore = defineStore('mqtt', () => {
    * Get a list of all vehicles
    * @returns Vehicle[]
    */
-  const vehicleList = computed(() => {
+  const vehicleList = computed<Vehicle[]>(() => {
     const list = getWildcardValues.value('openWB/vehicle/+/name');
+    const hideStandardFahrzeuge =
+      themeConfiguration.value?.hide_standard_vehicle;
+    // Filter out Standard-Fahrzeug if hideStandardFahrzeuge is true
+    const filteredList = hideStandardFahrzeuge
+      ? Object.fromEntries(
+          Object.entries(list).filter(
+            ([, name]) =>
+              typeof name === 'string' && name !== 'Standard-Fahrzeug',
+          ),
+        )
+      : list;
     // generate an array of objects, containing vehicle index and name
-    return Object.keys(list).map((key) => {
+    return Object.keys(filteredList).map((key) => {
       const vehicleIndex = parseInt(key.split('/')[2]);
       return {
         id: vehicleIndex,
-        name: list[key],
+        name: filteredList[key],
       } as Vehicle;
     });
   });
@@ -2050,16 +2057,16 @@ export const useMqttStore = defineStore('mqtt', () => {
   });
 
   /**
-   * Get vehicle SoC module configuration identified by the vehicle id
+   * Get vehicle SoC type identified by the vehicle id
    * @param vehicleId vehicle id
-   * @returns vehicleSocModule
+   * @returns string | null | undefined
    */
-  const vehicleSocModule = computed(() => {
+  const vehicleSocType = computed(() => {
     return (vehicleId: number) => {
-      const socModule = getValue.value(
+      const socConfig = getValue.value(
         `openWB/vehicle/${vehicleId}/soc_module/config`,
-      ) as VehicleSocModuleConfig;
-      return socModule;
+      ) as { type: string } | null;
+      return socConfig?.type;
     };
   });
 
@@ -2113,11 +2120,12 @@ export const useMqttStore = defineStore('mqtt', () => {
 
   /**
    * trigger a force SOC update for the vehicle by vehicle id
+   * @param vehicleId vehicle id
+   * @returns void
    */
   const vehicleForceSocUpdate = (vehicleId: number) => {
     if (vehicleId !== undefined) {
-      const topic = `openWB/set/vehicle/${vehicleId}/get/force_soc_update`;
-      console.log(topic);
+      const topic = `openWB/vehicle/${vehicleId}/get/force_soc_update`;
       sendTopicToBroker(topic, 1);
     }
   };
@@ -2895,7 +2903,7 @@ export const useMqttStore = defineStore('mqtt', () => {
     chargePointConnectedVehicleConfig,
     vehicleInfo,
     vehicleConnectionState,
-    vehicleSocModule,
+    vehicleSocType,
     vehicleSocValue,
     vehicleSocManualValue,
     vehicleForceSocUpdate,

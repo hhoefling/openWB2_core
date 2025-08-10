@@ -14,7 +14,7 @@
         <q-tab name="vehicles" title="Fahrzeuge">
           <q-icon name="directions_car" size="md" color="primary" />
         </q-tab>
-        <q-tab name="batteries" title="Speicher">
+        <q-tab v-if="batteryConfigured" name="batteries" title="Speicher">
           <q-icon name="battery_full" size="md" color="primary" />
         </q-tab>
         <!-- <q-tab name="smart-home" title="SmartHome">
@@ -24,15 +24,15 @@
       <!-- Tab Panels -->
       <q-tab-panels v-model="tab" class="col">
         <!-- Charge Points -->
-        <q-tab-panel name="charge-points" class="q-pa-none column">
+        <q-tab-panel name="charge-points">
           <ChargePointInformation />
         </q-tab-panel>
         <!-- Vehicles -->
-        <q-tab-panel name="vehicles" class="q-pa-none column">
+        <q-tab-panel name="vehicles">
           <VehicleInformation />
         </q-tab-panel>
         <!-- Batteries -->
-        <q-tab-panel name="batteries" class="remove-flex-properties">
+        <q-tab-panel v-if="batteryConfigured" name="batteries">
           <BatteryInformation />
         </q-tab-panel>
         <!-- Smart Home -->
@@ -45,7 +45,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useMqttStore } from 'src/stores/mqtt-store';
 import ChartCarousel from 'src/components/ChartCarousel.vue';
 import ChargePointInformation from 'src/components/ChargePointInformation.vue';
 import BatteryInformation from 'src/components/BatteryInformation.vue';
@@ -57,6 +58,11 @@ defineOptions({
 });
 
 const tab = ref<string>('charge-points');
+const mqttStore = useMqttStore();
+
+const batteryConfigured = computed(() => {
+  return mqttStore.batteryConfigured;
+});
 </script>
 
 <style scoped>

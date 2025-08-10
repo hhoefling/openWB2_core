@@ -1,28 +1,25 @@
 <template>
-  <div v-if="showBatteryOverview" class="row justify-center">
-    <BatteryCard :battery-id="undefined"/>
-  </div>
-  <BaseCarousel :items="batteryIds" :card-width="cardWidth">
+  <BaseCarousel :items="batteryIds">
     <template #item="{ item }">
-      <BatteryCard :battery-id="item" @card-width="cardWidth = $event"/>
+      <BatteryCard :battery-id="item" />
     </template>
   </BaseCarousel>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { useMqttStore } from 'src/stores/mqtt-store';
 
 import BaseCarousel from 'src/components/BaseCarousel.vue';
 import BatteryCard from 'src/components/BatteryCard.vue';
 
-const cardWidth = ref<number | undefined>(undefined);
-
 const mqttStore = useMqttStore();
 
-const batteryIds = computed(() => mqttStore.batteryIds);
-
-const showBatteryOverview = computed(() => {
-  return mqttStore.batteryIds.length > 1;
+const batteryIds = computed(() => {
+  let ids = mqttStore.batteryIds;
+  if (ids.length > 1) {
+    return [-1].concat(ids); // add overview card if more than one battery
+  }
+  return ids;
 });
 </script>

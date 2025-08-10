@@ -1,43 +1,52 @@
 <template>
-  <q-card ref="cardRef" class="full-height card-width">
-    <q-card-section>
-      <div class="row text-h6 items-center text-bold justify-between">
-        <div>
-          <q-icon
-            name="battery_full"
-            size="sm"
-            class="q-mr-sm"
-            color="primary"
-          />
-          {{ cardTitle }}
-        </div>
+  <q-card
+    ref="cardRef"
+    class="full-height card-width"
+    :class="{ 'battery-sum': props.batteryId === -1 }"
+  >
+    <q-card-section
+      class="text-h6 items-center text-bold justify-between ellipsis"
+      :title="cardTitle"
+    >
+      {{ cardTitle }}
+    </q-card-section>
+    <q-separator inset />
+    <q-card-section class="row flex justify-end">
+      <q-icon
+        class="cursor-pointer q-mt-sm"
+        v-if="showSettings"
+        name="settings"
+        size="sm"
+        @click="dialog?.open()"
+      />
+    </q-card-section>
+    <q-card-section
+      class="row q-mt-sm text-subtitle2 justify-between full-width"
+    >
+      <div>Leistung:</div>
+      <div class="q-ml-sm">
+        {{ power }}
+      </div>
+    </q-card-section>
+    <q-separator v-if="showSettings" inset class="q-mt-sm" />
+    <q-card-section
+      v-if="showSettings"
+      class="row q-mt-md justify-between text-subtitle2"
+    >
+      <div>Laden mit Überschuss:</div>
+      <div class="q-ml-sm row items-center">
         <q-icon
-          class="cursor-pointer"
-          v-if="showSettings"
-          name="settings"
+          :name="batteryMode.icon"
           size="sm"
-          @click="dialog?.open()"
+          class="q-mr-sm"
+          color="primary"
         />
+        {{ batteryMode.label }}
       </div>
-      <div class="row q-mt-sm text-subtitle2 justify-between full-width">
-        <div>Leistung:</div>
-        <div class="q-ml-sm">
-          {{ power }}
-        </div>
-      </div>
-      <div v-if="showSettings" class="row q-mt-md justify-between text-subtitle2">
-        <div>Laden mit Überschuss:</div>
-        <div class="q-ml-sm row items-center">
-          <q-icon
-            :name="batteryMode.icon"
-            size="sm"
-            class="q-mr-sm"
-            color="primary"
-          />
-          {{ batteryMode.label }}
-        </div>
-      </div>
-      <div class="text-subtitle1 text-weight-bold q-mt-md">Heute:</div>
+    </q-card-section>
+    <q-separator inset class="q-mt-sm" />
+    <q-card-section>
+      <div class="text-subtitle1 text-weight-bold q-mt-sm">Heute:</div>
       <div class="row q-mt-sm text-subtitle2 justify-between full-width">
         <div>Geladen:</div>
         <div class="q-ml-sm">
@@ -50,6 +59,9 @@
           {{ dailyExportedEnergy }}
         </div>
       </div>
+    </q-card-section>
+    <q-separator inset class="q-mt-sm" />
+    <q-card-section>
       <SliderDouble
         class="q-mt-sm"
         :current-value="soc"
@@ -62,19 +74,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue';
+import { computed, ref, onMounted, inject } from 'vue';
 import { useMqttStore } from 'src/stores/mqtt-store';
 import BatterySettingsDialog from './BatterySettingsDialog.vue';
 import { useBatteryModes } from 'src/composables/useBatteryModes.ts';
 import SliderDouble from './SliderDouble.vue';
 
 const cardRef = ref<{ $el: HTMLElement } | null>(null);
-const emit = defineEmits<{
-  (event: 'card-width', width: number | undefined): void;
-}>();
+const setCardWidth = inject<((width: number | undefined) => void) | undefined>(
+  'setCardWidth',
+  undefined,
+);
 
 const props = defineProps<{
-  batteryId: number | undefined;
+  batteryId: number;
 }>();
 
 const singleBattery = computed(() => {
@@ -82,10 +95,14 @@ const singleBattery = computed(() => {
 });
 
 const showSettings = computed(() => {
-  return props.batteryId === undefined || singleBattery.value;
+  return isOverview.value || singleBattery.value;
 });
 
 const { batteryModes } = useBatteryModes();
+
+const isOverview = computed(() => {
+  return props.batteryId === -1;
+});
 
 const batteryMode = computed(() => {
   const mode = mqttStore.batteryMode();
@@ -97,28 +114,28 @@ const dialog = ref();
 const mqttStore = useMqttStore();
 
 const cardTitle = computed(() => {
-  if (props.batteryId === undefined) {
+  if (isOverview.value) {
     return 'Speicher Übersicht';
   }
   return mqttStore.batteryName(props.batteryId);
 });
 
 const soc = computed(() => {
-  if (props.batteryId === undefined) {
+  if (isOverview.value) {
     return mqttStore.batterySocTotal;
   }
   return mqttStore.batterySoc(props.batteryId);
 });
 
 const power = computed(() => {
-  if (props.batteryId === undefined) {
+  if (isOverview.value) {
     return mqttStore.batteryTotalPower('textValue') as string | '---';
   }
   return mqttStore.batteryPower(props.batteryId, 'textValue') as string | '---';
 });
 
 const dailyImportedEnergy = computed(() => {
-  if (props.batteryId === undefined) {
+  if (isOverview.value) {
     return mqttStore.batteryDailyImportedTotal('textValue') as string | '---';
   }
   return (
@@ -128,7 +145,7 @@ const dailyImportedEnergy = computed(() => {
 });
 
 const dailyExportedEnergy = computed(() => {
-  if (props.batteryId === undefined) {
+  if (isOverview.value) {
     return mqttStore.batteryDailyExportedTotal('textValue') as string | '---';
   }
   return (
@@ -139,12 +156,34 @@ const dailyExportedEnergy = computed(() => {
 
 onMounted(() => {
   const cardWidth = cardRef.value?.$el.clientWidth;
-  emit('card-width', cardWidth);
+  setCardWidth?.(cardWidth);
 });
 </script>
 
 <style scoped>
 .card-width {
   width: 22em;
+}
+
+.q-card__section {
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.q-card__section:first-of-type {
+  padding-top: 16px;
+  padding-bottom: 0;
+}
+
+.q-card__section:last-of-type {
+  padding-top: 0;
+  padding-bottom: 16px;
+}
+
+.q-card__section:not(:first-of-type):not(:last-of-type) {
+  padding-top: 0;
+  padding-bottom: 0;
 }
 </style>
