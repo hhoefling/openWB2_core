@@ -80,6 +80,7 @@ class ChargepointModule(AbstractChargepoint):
                     power=json_rsp["actualPower"] * 1000,
                     currents=currents,
                     imported=json_rsp["meterReading"] * 1000,
+                    exported=0,
                     plug_state=plug_state,
                     charge_state=charge_state,
                     phases_in_use=phases_in_use,
@@ -89,8 +90,16 @@ class ChargepointModule(AbstractChargepoint):
                     max_evse_current=max_evse_current
                 )
 
-                self.store.set(chargepoint_state)
                 self.client_error_context.reset_error_counter()
+            if self.client_error_context.error_counter_exceeded():
+                chargepoint_state = ChargepointState(plug_state=None,
+                                                     charge_state=False,
+                                                     imported=None,
+                                                     exported=None,
+                                                     currents=[0]*3,
+                                                     phases_in_use=0,
+                                                     power=0)
+            self.store.set(chargepoint_state)
 
     def clear_rfid(self) -> None:
         with SingleComponentUpdateContext(self.fault_state):

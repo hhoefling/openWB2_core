@@ -7,13 +7,11 @@
 
 	<title>openWB</title>
 	<meta charset="UTF-8">
-	<meta name="viewport"
-		content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=0">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=0">
 	<meta name="apple-mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 	<meta name="apple-mobile-web-app-title" content="openWB">
 	<meta name="apple-mobile-web-app-status-bar-style" content="default">
-	<meta name="apple-mobile-web-app-title" content="openWB">
 	<meta name="description" content="openWB">
 	<meta name="keywords" content="openWB">
 	<meta name="author" content="Michael Ortenstein">
@@ -42,7 +40,7 @@
 	<!-- Normalize -->
 	<link rel="stylesheet" type="text/css" href="css/normalize-8.0.1.css">
 	<!-- Font Awesome, all styles -->
-	<link rel="stylesheet" type="text/css" href="fonts/font-awesome-5.8.2/css/all.css">
+	<link rel="stylesheet" type="text/css" href="fonts/font-awesome-6.7.2/css/all.min.css">
 	<!-- local css due to async loading of theme css -->
 	<style>
 		#preloader {
@@ -154,12 +152,12 @@
 							<hr class="border-warning">
 							<div class="row">
 								<div class="col font-italic font-weight-bold">
-									Einstellungen:
+									Speicher-Beachtung
 								</div>
 							</div>
 							<div class="row vaRow">
 								<div class="col pr-0">
-									Laden mit Überschuss
+									Überschuss primär für:
 								</div>
 								<div class="col-md-8 btn-group btn-group-toggle bat-consideration-mode"
 									data-toggle="buttons" data-name="bat_consideration_mode"
@@ -213,7 +211,7 @@
 				<div class="card border-danger fill-height">
 					<div class="card-header bg-danger collapsed" data-toggle="collapse" data-target="#cardGrid">
 						<img src="img/icons/electric-tower.svg" alt="electric tower" style="width: 1.1em;">
-						<i class="et-configured fas fa-coins hide"></i>
+						<i class="ep-configured fas fa-coins hide"></i>
 						<i class="grid-exporting fas fa-angle-double-left hide"></i>
 						<i class="grid-importing fas fa-angle-double-right hide"></i>
 						<span class="grid-power">600 W</span>
@@ -241,7 +239,7 @@
 								-- Wh
 							</div>
 						</div>
-						<div class="et-configured hide">
+						<div class="ep-configured hide">
 							<hr class="border-danger">
 							<div class="row">
 								<div class="col font-italic font-weight-bold">
@@ -250,17 +248,9 @@
 							</div>
 							<div class="row">
 								<div class="col pr-0">
-									Anbieter
-								</div>
-								<div class="et-name col pl-0 text-right">
-									--
-								</div>
-							</div>
-							<div class="row">
-								<div class="col pr-0">
 									aktuell
 								</div>
-								<div class="et-current-price col pl-0 text-right">
+								<div class="ep-current-price col pl-0 text-right">
 									-- ct/kWh
 								</div>
 							</div>
@@ -422,7 +412,7 @@
 						</div>
 						<div class="col-3">
 							<span class="charge-point-vehicle-charge-mode">--</span>
-							<span class="et-configured hide">
+							<span class="ep-configured hide">
 								<span class="charge-point-charge-mode-options">
 									<span
 										class="chargemode-options chargemode-option-instant_charging chargemode-option-scheduled_charging">
@@ -502,7 +492,10 @@
 							<!-- Lademodus -->
 							<div class="form-row mb-1">
 								<div class="col">
-									<label class="col-form-label">Lademodus</label>
+									<label class="col-form-label">
+										<i class="fas fa-hexagon-nodes-bolt"></i>
+										Lademodus
+									</label>
 								</div>
 								<div class="col-md-8 btn-group btn-group-toggle charge-point-charge-mode"
 									data-toggle="buttons" data-name="chargemode"
@@ -1004,18 +997,14 @@
 										</div>
 										<div class="col-lg-6 text-right">
 											<span class="charge-point-schedule-plan-pill cursor-pointer border rounded p-1">
-												<span class="charge-point-schedule-frequency">
-													<i class="fas fa-calendar-alt"></i>
-													<span class="charge-point-schedule-frequency-value">--</span>
-												</span>
-												<span class="charge-point-schedule-date">
-													<i class="fas fa-calendar-day"></i>
-													<span class="charge-point-schedule-date-value">--</span>
-												</span>
+												<i class="charge-point-schedule-frequency fas fa-calendar-alt"></i>
+												<span class="charge-point-schedule-frequency-value">--</span>
 												<i class="fas fa-clock"></i> <span
 													class="charge-point-schedule-time">--</span>
 												<i class="charge-point-schedule-limit-icon fas fa-car-battery"></i>
 												<span class="charge-point-schedule-limit">--</span>
+												<i class="charge-point-schedule-mode hide fas"></i>
+												<span class="charge-point-schedule-soc-limit hide">--</span>
 												<i class="charge-point-schedule-et-active-icon fas fa-coins hide"></i>
 											</span>
 										</div>
@@ -1024,7 +1013,7 @@
 								<!-- Eco -->
 								<div class="chargemode-options chargemode-option-eco_charging">
 									<h3>Einstellungen für "Eco"</h3>
-									<div class="et et-configured hide">
+									<div class="et ep-configured hide">
 										<div class="charge-point-charge-mode-options mb-0 hide">
 											<div class="form-row mb-1">
 												<div class="col">
@@ -1092,7 +1081,7 @@
 									</div>
 									<div class="form-row vaRow mb-1">
 										<div class="col">
-											<label class="col-form-label">Anzahl Phasen</label>
+											<label class="col-form-label">Anzahl Phasen bei Überschuss</label>
 										</div>
 										<div class="col-md-8 btn-group btn-group-toggle charge-point-eco-charge-phases"
 											id="phasesEcoChargeCpT" data-name="phasesCp" data-toggle="buttons"
@@ -1548,7 +1537,7 @@
 				// adapter for time scales
 				'js/chartjs-adapter-luxon/chartjs-adapter-luxon.min.js',
 				// load mqtt library
-				'js/mqttws31.js',
+				'js/mqtt-5.14.1.js',
 				// some helper functions
 				'helperFunctions.js?ver=20250217',
 				// functions for processing messages

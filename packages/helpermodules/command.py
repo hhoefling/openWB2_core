@@ -3,31 +3,37 @@ from dataclasses import asdict
 import importlib
 import json
 import logging
+from random import randrange
 import subprocess
 from threading import Event
-import time
+from time import sleep
 from typing import Dict, Optional
 import re
 import traceback
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
-from control.chargelog import chargelog
+from control.chargelog.process_chargelog import get_log_data
 from control.chargepoint import chargepoint
 from control.chargepoint.chargepoint_template import get_chargepoint_template_default
 
-from control.ev.charge_template import get_new_charge_template
+from control.ev.charge_template import ChargeTemplate, get_new_charge_template
 from control.ev.ev_template import EvTemplateData
 from helpermodules import pub
 from helpermodules.abstract_plans import AutolockPlan, ScheduledChargingPlan, TimeChargingPlan
 from helpermodules.utils.run_command import run_command
 # ToDo: move to module commands if implemented
 from modules.backup_clouds.onedrive.api import generateMSALAuthCode, retrieveMSALTokens
+from modules.io_devices.eebus.api import create_pub_cert_ski
 
 from helpermodules.broker import BrokerClient
 from helpermodules.data_migration.data_migration import MigrateData
 from helpermodules.measurement_logging.process_log import get_daily_log, get_monthly_log, get_yearly_log
 from helpermodules.messaging import MessageType, pub_user_message
+from helpermodules.mosquitto_dynsec.mosquitto_dynsec import (generate_password_reset_token, get_user_email,
+                                                             send_password_reset_to_server, verify_password_reset_token)
+from helpermodules.mosquitto_dynsec.role_handler import add_acl_role, remove_acl_role
+from helpermodules.mosquitto_dynsec.user_handler import remove_display_user, update_user_password
 from helpermodules.create_debug import create_debug_log
 from helpermodules.pub import Pub, pub_single
 from helpermodules.subdata import SubData
@@ -75,37 +81,38 @@ class Command:
 
     def _get_max_ids(self) -> None:
         """ ermittelt die maximale ID vom Broker """
+        plan_extractors = {
+            "autolock_plan": lambda p: p.get("autolock", {}).get("plans", []),
+            "charge_template_scheduled_plan": lambda p: p.get("chargemode", {}).get("scheduled_charging",
+                                                                                    {}).get("plans", []),
+            "charge_template_time_charging_plan": lambda p: p.get("time_charging", {}).get("plans", [])
+        }
         try:
             received_topics = ProcessBrokerBranch("").get_max_id()
-            for id_topic, topic_str, default in self.MAX_IDS["nested payload"]:
-                max_id = default
-                for topic, payload in received_topics.items():
-                    if re.search(topic_str, topic) is not None:
-                        if id_topic == "autolock_plan":
-                            for plan in payload["autolock"]["plans"]:
-                                max_id = max(plan["id"], max_id)
-                        elif id_topic == "charge_template_scheduled_plan":
-                            for plan in payload["chargemode"]["scheduled_charging"]["plans"]:
-                                max_id = max(plan["id"], max_id)
-                        elif id_topic == "charge_template_time_charging_plan":
-                            for plan in payload["time_charging"]["plans"]:
-                                max_id = max(plan["id"], max_id)
-                setattr(self, f'max_id_{id_topic}', max_id)
-                Pub().pub("openWB/set/command/max_id/"+id_topic, max_id)
-            for id_topic, topic_str, default in self.MAX_IDS["topic"]:
-                max_id = default
-                for topic in received_topics.keys():
-                    if re.search(topic_str, topic) is not None:
-                        max_id = max(int(get_index(topic)), max_id)
-                setattr(self, f'max_id_{id_topic}', max_id)
-                Pub().pub("openWB/set/command/max_id/"+id_topic, max_id)
-            for id_topic, topic_str, default in self.MAX_IDS["payload"]:
-                max_id = default
-                for topic, payload in received_topics.items():
-                    if re.search(topic_str, topic) is not None:
-                        max_id = max(payload["id"], max_id)
-                setattr(self, f'max_id_{id_topic}', max_id)
-                Pub().pub("openWB/set/command/max_id/"+id_topic, max_id)
+            for max_id_type in self.MAX_IDS.keys():
+                for id_topic, topic_str, default in self.MAX_IDS[max_id_type]:
+                    max_id = default
+                    for topic, payload in received_topics.items():
+                        try:
+                            if max_id_type == "nested payload":
+                                if re.search(topic_str, topic) is not None:
+                                    extractor = plan_extractors.get(id_topic)
+                                    for plan in extractor(payload):
+                                        try:
+                                            max_id = max(plan["id"], max_id)
+                                        except Exception:
+                                            log.exception(f"Fehler beim Ermitteln der maximalen ID für {id_topic} "
+                                                          f"beim {id_topic}")
+                            elif max_id_type == "topic":
+                                if re.search(topic_str, topic) is not None:
+                                    max_id = max(int(get_index(topic)), max_id)
+                            elif max_id_type == "payload":
+                                if re.search(topic_str, topic) is not None:
+                                    max_id = max(payload["id"], max_id)
+                        except Exception:
+                            log.exception(f"Fehler beim Ermitteln der maximalen ID für {id_topic}")
+                    setattr(self, f'max_id_{id_topic}', max_id)
+                    Pub().pub(f"openWB/set/command/max_id/{id_topic}", max_id)
         except Exception:
             log.exception("Fehler im Command-Modul")
 
@@ -125,7 +132,7 @@ class Command:
         try:
             # kurze Pause, damit die ID vom Broker ermittelt werden können. Sonst werden noch vorher die retained
             # Topics empfangen, was zu doppelten Meldungen im Protokoll führt.
-            time.sleep(1)
+            sleep(1)
             self.internal_broker_client = BrokerClient("command", self.on_connect, self.on_message)
             self.internal_broker_client.start_infinite_loop()
         except Exception:
@@ -201,6 +208,7 @@ class Command:
         Pub().pub(f'openWB/set/io/action/{new_id}/config', device_default)
         self.max_id_io_action = new_id
         Pub().pub("openWB/set/command/max_id/io_action", self.max_id_io_action)
+        add_acl_role("io-action-<id>-access", new_id)
         pub_user_message(
             payload, connection_id,
             f'Neue IO-Aktion vom Typ \'{" / ".join(payload["data"]["type"])}\' mit ID \'{new_id}\' hinzugefügt.',
@@ -209,6 +217,7 @@ class Command:
     def removeIoAction(self, connection_id: str, payload: dict) -> None:
         if self.max_id_io_action >= payload["data"]["id"]:
             ProcessBrokerBranch(f'io/action/{payload["data"]["id"]}/').remove_topics()
+            remove_acl_role("io-action-<id>-access", payload["data"]["id"])
             pub_user_message(payload, connection_id, f'IO-Aktion mit ID \'{payload["data"]["id"]}\' gelöscht.',
                              MessageType.SUCCESS)
         else:
@@ -229,6 +238,9 @@ class Command:
         Pub().pub(f'openWB/set/system/io/{new_id}/config', device_default)
         self.max_id_io_device = new_id
         Pub().pub("openWB/set/command/max_id/io_device", self.max_id_io_device)
+        add_acl_role("io-device-<id>-access", new_id)
+        if device_default["output"]["digital"] or device_default["output"]["analog"]:
+            add_acl_role("io-device-<id>-write-access", new_id)
         pub_user_message(
             payload, connection_id,
             f'Neues IO-Gerät vom Typ \'{payload["data"]["type"]}\' mit ID \'{new_id}\' hinzugefügt.',
@@ -239,6 +251,9 @@ class Command:
         """
         if self.max_id_io_device >= payload["data"]["id"]:
             ProcessBrokerBranch(f'system/io/{payload["data"]["id"]}/').remove_topics()
+            ProcessBrokerBranch(f'io/states/{payload["data"]["id"]}/').remove_topics()
+            remove_acl_role("io-device-<id>-access", payload["data"]["id"])
+            remove_acl_role("io-device-<id>-write-access", payload["data"]["id"])
             pub_user_message(payload, connection_id, f'IO-Gerät mit ID \'{payload["data"]["id"]}\' gelöscht.',
                              MessageType.SUCCESS)
         else:
@@ -256,15 +271,7 @@ class Command:
             Pub().pub(f'openWB/chargepoint/{new_id}/set/manual_lock', False)
             {Pub().pub(f"openWB/chargepoint/{new_id}/get/"+k, v) for (k, v) in asdict(chargepoint.Get()).items()}
             charge_template = SubData.ev_charge_template_data[f"ct{SubData.ev_data['ev0'].data.charge_template}"]
-            for time_plan in charge_template.data.time_charging.plans:
-                Pub().pub(f'openWB/chargepoint/{new_id}/set/charge_template/time_charging/plans',
-                          dataclass_utils.asdict(time_plan))
-            for scheduled_plan in charge_template.data.chargemode.scheduled_charging.plans:
-                Pub().pub(f'openWB/chargepoint/{new_id}/set/charge_template/chargemode/scheduled_charging/plans',
-                          scheduled_plan)
             charge_template = dataclass_utils.asdict(charge_template.data)
-            charge_template["chargemode"]["scheduled_charging"]["plans"].clear()
-            charge_template["time_charging"]["plans"].clear()
             Pub().pub(f'openWB/chargepoint/{new_id}/set/charge_template', charge_template)
             self.max_id_hierarchy = self.max_id_hierarchy + 1
             Pub().pub("openWB/set/command/max_id/hierarchy", self.max_id_hierarchy)
@@ -272,6 +279,9 @@ class Command:
                 self.addChargepointTemplate("addChargepoint", {})
             if self.max_id_vehicle == -1:
                 self.addVehicle("addChargepoint", {})
+            add_acl_role("chargepoint-<id>-access", new_id)
+            if chargepoint_config["type"] == "mqtt":
+                add_acl_role("chargepoint-<id>-write-access", new_id)
             pub_user_message(payload, connection_id, f'Neuer Ladepunkt mit ID \'{new_id}\' wurde erstellt.',
                              MessageType.SUCCESS)
         new_id = self.max_id_hierarchy + 1
@@ -284,11 +294,12 @@ class Command:
         check_num_msg = self._check_max_num_of_internal_chargepoints(chargepoint_config)
         if check_num_msg is not None:
             pub_user_message(
-                payload, connection_id, f"{check_num_msg} Wenn Sie weitere Ladepunkte anbinden wollen, müssen Sie "
+                payload, connection_id, f"{check_num_msg} Wenn Du weitere Ladepunkte anbinden willst, musst Du "
                 "diese als secondary openWB anbinden. Die weiteren Ladepunkte in den Steuerungsmodus 'secondary'"
                 " versetzen.", MessageType.ERROR)
             return
         chargepoint_config["id"] = new_id
+        chargepoint_config["name"] = f'{chargepoint_config["name"]} {new_id}'
         try:
             evu_counter = data.data.counter_all_data.get_id_evu_counter()
             data.data.counter_all_data.hierarchy_add_item_below(
@@ -327,7 +338,9 @@ class Command:
             for cp in SubData.cp_data.values():
                 if isinstance(cp.chargepoint.chargepoint_module, ChargepointModule):
                     if (cp.chargepoint.chargepoint_module.config.configuration.mode ==
-                            InternalChargepointMode.DUO.value):
+                            InternalChargepointMode.DUO.value or
+                            cp.chargepoint.chargepoint_module.config.configuration.mode ==
+                            InternalChargepointMode.SE.value):
                         count_duo += 1
                     else:
                         count_series_socket += 1
@@ -346,27 +359,52 @@ class Command:
     def removeChargepoint(self, connection_id: str, payload: dict) -> None:
         """ löscht ein Ladepunkt.
         """
-        if self.max_id_hierarchy < payload["data"]["id"]:
-            log.error(
+        cp_id = payload["data"]["id"]
+        if self.max_id_hierarchy < cp_id:
+            pub_user_message(
                 payload, connection_id,
-                f'Die ID \'{payload["data"]["id"]}\' ist größer als die maximal vergebene '
+                f'Die ID \'{cp_id}\' ist größer als die maximal vergebene '
                 f'ID \'{self.max_id_hierarchy}\'.', MessageType.ERROR)
-        ProcessBrokerBranch(f'chargepoint/{payload["data"]["id"]}/').remove_topics()
-        data.data.counter_all_data.hierarchy_remove_item(payload["data"]["id"])
+            return
+        cp = SubData.cp_data.get(f"cp{cp_id}", None)
+        if cp is None:
+            pub_user_message(
+                payload, connection_id,
+                f'Ladepunkt mit ID \'{cp_id}\' existiert nicht.', MessageType.ERROR)
+            return
+        cp_type = cp.chargepoint.data.config.type
+        if cp_type == "external_openwb":
+            cp_ip = cp.chargepoint.data.config.configuration.get("ip_address")
+            if cp_ip is not None:
+                # check if ip is used in other charge points, if not remove display user
+                for cp in SubData.cp_data.values():
+                    if (
+                        cp.chargepoint.data.config.configuration.get("ip_address", None) == cp_ip
+                        and cp.chargepoint.num != cp_id
+                    ):
+                        log.info(f"IP {cp_ip} is still used by cp{cp.chargepoint.num}, not removing display user")
+                        break
+                else:
+                    remove_display_user(cp_ip)
+        remove_acl_role("chargepoint-<id>-access", cp_id)
+        remove_acl_role("chargepoint-<id>-write-access", cp_id)
+        ProcessBrokerBranch(f'chargepoint/{cp_id}/').remove_topics()
+        data.data.counter_all_data.hierarchy_remove_item(cp_id, ComponentType.CHARGEPOINT)
         Pub().pub("openWB/set/counter/get/hierarchy", data.data.counter_all_data.data.get.hierarchy)
         pub_user_message(payload, connection_id,
-                         f'Ladepunkt mit ID \'{payload["data"]["id"]}\' gelöscht.', MessageType.SUCCESS)
+                         f'Ladepunkt mit ID \'{cp_id}\' gelöscht.', MessageType.SUCCESS)
 
     def addChargepointTemplate(self, connection_id: str, payload: dict) -> None:
         """ sendet das Topic, zu dem ein neues Ladepunkt-Profil erstellt werden soll.
         """
+        new_id = self.max_id_chargepoint_template + 1
         # check if "payload" contains "data.copy"
         if "data" in payload and "copy" in payload["data"]:
             new_chargepoint_template = asdict(data.data.cp_template_data[f'cpt{payload["data"]["copy"]}'].data).copy()
             new_chargepoint_template["name"] = f'Kopie von {new_chargepoint_template["name"]}'
         else:
             new_chargepoint_template = get_chargepoint_template_default()
-        new_id = self.max_id_chargepoint_template + 1
+            new_chargepoint_template["name"] = f'{new_chargepoint_template["name"]} {new_id}'
         new_chargepoint_template["id"] = new_id
         Pub().pub(f'openWB/set/chargepoint/template/{new_id}', new_chargepoint_template)
         self.max_id_chargepoint_template = self.max_id_chargepoint_template + 1
@@ -374,7 +412,7 @@ class Command:
                   self.max_id_chargepoint_template)
         # if copying a template, copy autolock plans
         if "data" in payload and "copy" in payload["data"]:
-            for _, plan in data.data.cp_template_data[f'cpt{payload["data"]["copy"]}'].data.autolock.plans.items():
+            for plan in data.data.cp_template_data[f'cpt{payload["data"]["copy"]}'].data.autolock.plans:
                 new_plan = asdict(plan).copy()
                 new_plan["id"] = self.max_id_autolock_plan + 1
                 Pub().pub(f'openWB/set/chargepoint/template/{new_id}/autolock/{new_plan["id"]}', new_plan)
@@ -452,40 +490,28 @@ class Command:
     def addChargeTemplate(self, connection_id: str, payload: dict) -> None:
         """ sendet das Topic, zu dem ein neues Lade-Profil erstellt werden soll.
         """
+        new_id = self.max_id_charge_template + 1
+        self.max_id_charge_template = new_id
         # check if "payload" contains "data.copy"
         if "data" in payload and "copy" in payload["data"]:
-            new_charge_template = asdict(data.data.ev_charge_template_data[f'ct{payload["data"]["copy"]}'].data).copy()
-            new_charge_template["chargemode"]["scheduled_charging"].pop("plans")
-            new_charge_template["time_charging"].pop("plans")
-            new_charge_template["name"] = f'Kopie von {new_charge_template["name"]}'
-        else:
-            new_charge_template = get_new_charge_template()
-        new_id = self.max_id_charge_template + 1
-        new_charge_template["id"] = new_id
-        Pub().pub("openWB/set/vehicle/template/charge_template/" +
-                  str(new_id), new_charge_template)
-        self.max_id_charge_template = new_id
-        Pub().pub("openWB/set/command/max_id/charge_template", new_id)
-        # if copying a template, also copy schedule plans and time charging plans
-        if "data" in payload and "copy" in payload["data"]:
-            for _, plan in (data.data.ev_charge_template_data[f'ct{payload["data"]["copy"]}']
-                            .data.chargemode.scheduled_charging.plans.items()):
-                new_plan = asdict(plan).copy()
-                new_plan["id"] = self.max_id_charge_template_scheduled_plan + 1
-                Pub().pub(f'openWB/set/vehicle/template/charge_template/{new_id}/'
-                          f'chargemode/scheduled_charging/plans/{new_plan["id"]}',
-                          new_plan)
+            new_charge_template = copy.deepcopy(data.data.ev_charge_template_data[f'ct{payload["data"]["copy"]}'].data)
+            new_charge_template.name = f'Kopie von {new_charge_template.name}'
+            for plan in new_charge_template.chargemode.scheduled_charging.plans:
+                plan.id = self.max_id_charge_template_scheduled_plan + 1
                 self.max_id_charge_template_scheduled_plan += 1
             Pub().pub("openWB/set/command/max_id/charge_template_scheduled_plan", new_id)
-            for _, plan in (data.data.ev_charge_template_data[f'ct{payload["data"]["copy"]}']
-                            .data.time_charging.plans.items()):
-                new_plan = asdict(plan).copy()
-                new_plan["id"] = self.max_id_charge_template_time_charging_plan + 1
-                Pub().pub(f'openWB/set/vehicle/template/charge_template/{new_id}/'
-                          f'time_charging/plans/{new_plan["id"]}',
-                          new_plan)
+            for plan in new_charge_template.time_charging.plans:
+                plan.id = self.max_id_charge_template_time_charging_plan + 1
                 self.max_id_charge_template_time_charging_plan += 1
             Pub().pub("openWB/set/command/max_id/charge_template_time_charging_plan", new_id)
+            new_charge_template = asdict(new_charge_template)
+        else:
+            new_charge_template = get_new_charge_template()
+            new_charge_template["name"] = f'{new_charge_template["name"]} {new_id}'
+        new_charge_template["id"] = new_id
+
+        Pub().pub("openWB/set/command/max_id/charge_template", new_id)
+        Pub().pub(f"openWB/set/vehicle/template/charge_template/{new_id}", new_charge_template)
         pub_user_message(payload, connection_id,
                          f'Neues Lade-Profil mit ID \'{new_id}\' hinzugefügt.',
                          MessageType.SUCCESS)
@@ -506,13 +532,36 @@ class Command:
             pub_user_message(payload, connection_id, "Lade-Profil mit ID 0 darf nicht gelöscht werden.",
                              MessageType.ERROR)
 
+    def _get_charge_template_by_source(self, payload: dict) -> ChargeTemplate:
+        """ gibt das ChargeTemplate-Objekt zurück, je nachdem ob es sich um das persistente Ladeprofil oder das
+        Ladeprofil des Ladepunkts handelt.
+        """
+        if payload["data"]["changed_in_theme"]:
+            charge_template = data.data.cp_data[f"cp{payload['data']['chargepoint']}"].data.set.charge_template
+        else:
+            charge_template = data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}']
+        return charge_template
+
+    def _pub_charge_template_to_source(self, payload: dict, charge_template: ChargeTemplate) -> None:
+        """ veröffentlicht das ChargeTemplate-Objekt, je nachdem ob es sich um das persistente Ladeprofil oder das
+        Ladeprofil des Ladepunkts handelt.
+        """
+        if payload["data"]["changed_in_theme"]:
+            Pub().pub(
+                f'openWB/set/chargepoint/{payload["data"]["chargepoint"]}/set/charge_template',
+                dataclass_utils.asdict(charge_template.data))
+        else:
+            Pub().pub(
+                f'openWB/set/vehicle/template/charge_template/{payload["data"]["template"]}',
+                dataclass_utils.asdict(charge_template.data))
+
     def addChargeTemplateSchedulePlan(self, connection_id: str, payload: dict) -> None:
         """ sendet das Topic, zu dem ein neuer Zielladen-Plan erstellt werden soll.
         """
+        charge_template = self._get_charge_template_by_source(payload)
         # check if "payload" contains "data.copy"
         if "data" in payload and "copy" in payload["data"]:
-            for plan in data.data.ev_charge_template_data[
-                    f'ct{payload["data"]["template"]}'].data.chargemode.scheduled_charging.plans:
+            for plan in charge_template.data.chargemode.scheduled_charging.plans:
                 if plan.id == payload["data"]["copy"]:
                     new_charge_template_schedule_plan = copy.deepcopy(plan)
                     break
@@ -521,12 +570,8 @@ class Command:
             new_charge_template_schedule_plan = ScheduledChargingPlan()
         new_id = self.max_id_charge_template_scheduled_plan + 1
         new_charge_template_schedule_plan.id = new_id
-        data.data.ev_charge_template_data[
-            f'ct{payload["data"]["template"]}'].data.chargemode.scheduled_charging.plans.append(
-            new_charge_template_schedule_plan)
-        Pub().pub(
-            f'openWB/set/vehicle/template/charge_template/{payload["data"]["template"]}',
-            dataclass_utils.asdict(data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}'].data))
+        charge_template.data.chargemode.scheduled_charging.plans.append(new_charge_template_schedule_plan)
+        self._pub_charge_template_to_source(payload, charge_template)
         self.max_id_charge_template_scheduled_plan = new_id
         Pub().pub(
             "openWB/set/command/max_id/charge_template_scheduled_plan", new_id)
@@ -539,21 +584,17 @@ class Command:
     def removeChargeTemplateSchedulePlan(self, connection_id: str, payload: dict) -> None:
         """ löscht einen Zielladen-Plan.
         """
+        charge_template = self._get_charge_template_by_source(payload)
         if self.max_id_charge_template_scheduled_plan < payload["data"]["plan"]:
             log.error(
                 payload, connection_id,
                 f'Die ID \'{payload["data"]["plan"]}\' ist größer als die maximal vergebene '
                 f'ID \'{self.max_id_charge_template_scheduled_plan}\'.', MessageType.ERROR)
-        for plan in data.data.ev_charge_template_data[
-                f'ct{payload["data"]["template"]}'].data.chargemode.scheduled_charging.plans:
+        for plan in charge_template.data.chargemode.scheduled_charging.plans:
             if plan.id == payload["data"]["plan"]:
-                data.data.ev_charge_template_data[
-                    f'ct{payload["data"]["template"]}'].data.chargemode.scheduled_charging.plans.remove(
-                    plan)
+                charge_template.data.chargemode.scheduled_charging.plans.remove(plan)
                 break
-        Pub().pub(
-            f'openWB/vehicle/template/charge_template/{payload["data"]["template"]}',
-            dataclass_utils.asdict(data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}'].data))
+        self._pub_charge_template_to_source(payload, charge_template)
         pub_user_message(
             payload, connection_id,
             f'Zielladen-Plan mit ID \'{payload["data"]["plan"]}\' von Profil '
@@ -563,9 +604,10 @@ class Command:
     def addChargeTemplateTimeChargingPlan(self, connection_id: str, payload: dict) -> None:
         """ sendet das Topic, zu dem ein neuer Zeitladen-Plan erstellt werden soll.
         """
+        charge_template = self._get_charge_template_by_source(payload)
         # check if "payload" contains "data.copy"
         if "data" in payload and "copy" in payload["data"]:
-            for plan in data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}'].data.time_charging.plans:
+            for plan in charge_template.data.time_charging.plans:
                 if plan.id == payload["data"]["copy"]:
                     new_time_charging_plan = copy.deepcopy(plan)
                     break
@@ -574,11 +616,8 @@ class Command:
             new_time_charging_plan = TimeChargingPlan()
         new_id = self.max_id_charge_template_time_charging_plan + 1
         new_time_charging_plan.id = new_id
-        data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}'].data.time_charging.plans.append(
-            new_time_charging_plan)
-        Pub().pub(
-            f'openWB/set/vehicle/template/charge_template/{payload["data"]["template"]}',
-            dataclass_utils.asdict(data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}'].data))
+        charge_template.data.time_charging.plans.append(new_time_charging_plan)
+        self._pub_charge_template_to_source(payload, charge_template)
         self.max_id_charge_template_time_charging_plan = new_id
         Pub().pub(
             "openWB/set/command/max_id/charge_template_time_charging_plan", new_id)
@@ -590,17 +629,15 @@ class Command:
     def removeChargeTemplateTimeChargingPlan(self, connection_id: str, payload: dict) -> None:
         """ löscht einen Zeitladen-Plan.
         """
+        charge_template = self._get_charge_template_by_source(payload)
         if self.max_id_charge_template_time_charging_plan < payload["data"]["plan"]:
             log.error(payload, connection_id, "Die ID ist größer als die maximal vergebene ID.",
                       MessageType.ERROR)
-        for plan in data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}'].data.time_charging.plans:
+        for plan in charge_template.data.time_charging.plans:
             if plan.id == payload["data"]["plan"]:
-                data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}'].data.time_charging.plans.remove(
-                    plan)
+                charge_template.data.time_charging.plans.remove(plan)
                 break
-        Pub().pub(
-            f'openWB/vehicle/template/charge_template/{payload["data"]["template"]}',
-            dataclass_utils.asdict(data.data.ev_charge_template_data[f'ct{payload["data"]["template"]}'].data))
+        self._pub_charge_template_to_source(payload, charge_template)
         pub_user_message(
             payload, connection_id,
             f'Zeitladen-Plan mit ID \'{payload["data"]["plan"]}\' zu Profil '
@@ -642,6 +679,7 @@ class Command:
         self.max_id_hierarchy = self.max_id_hierarchy + 1
         Pub().pub("openWB/set/command/max_id/hierarchy",
                   self.max_id_hierarchy)
+        add_acl_role(f"{general_type.value}-<id>-access", new_id)
         pub_user_message(
             payload, connection_id,
             f'Neue Komponente vom Typ \'{payload["data"]["type"]}\' mit ID \'{new_id}\' hinzugefügt.',
@@ -655,6 +693,10 @@ class Command:
                       "Die ID ist größer als die maximal vergebene ID.", MessageType.ERROR)
         branch = f'system/device/{payload["data"]["deviceId"]}/component/{payload["data"]["id"]}/'
         ProcessBrokerBranch(branch).remove_topics()
+        remove_acl_role(f"{special_to_general_type_mapping(payload['data']['type']).value}-<id>-access",
+                        payload["data"]["id"])
+        remove_acl_role(f"{special_to_general_type_mapping(payload['data']['type']).value}-<id>-write-access",
+                        payload["data"]["id"])
         pub_user_message(
             payload, connection_id,
             f'Komponente mit ID \'{payload["data"]["id"]}\' gelöscht.', MessageType.SUCCESS)
@@ -662,15 +704,17 @@ class Command:
     def addEvTemplate(self, connection_id: str, payload: dict) -> None:
         """ sendet das Topic, zu dem ein neues Fahrzeug-Profil erstellt werden soll.
         """
+        new_id = self.max_id_ev_template + 1
         # check if "payload" contains "data.copy"
         if "data" in payload and "copy" in payload["data"]:
             new_ev_template = asdict(data.data.ev_template_data[f"et{payload['data']['copy']}"].data).copy()
             new_ev_template["name"] = f'Kopie von {new_ev_template["name"]}'
         else:
             new_ev_template = dataclass_utils.asdict(EvTemplateData())
-        new_id = self.max_id_ev_template + 1
-        Pub().pub(f'openWB/set/vehicle/template/ev_template/{new_id}', new_ev_template)
+            new_ev_template["name"] = f'{new_ev_template["name"]} {new_id}'
+        new_ev_template["id"] = new_id
         self.max_id_ev_template = new_id
+        Pub().pub(f'openWB/set/vehicle/template/ev_template/{new_id}', new_ev_template)
         Pub().pub("openWB/set/command/max_id/ev_template", new_id)
         pub_user_message(
             payload, connection_id,
@@ -696,6 +740,7 @@ class Command:
         """
         new_id = self.max_id_vehicle + 1
         vehicle_default = ev.get_vehicle_default()
+        vehicle_default["name"] = f'{vehicle_default["name"]} {new_id}'
         for default in vehicle_default:
             Pub().pub(f"openWB/set/vehicle/{new_id}/{default}", vehicle_default[default])
         Pub().pub(f"openWB/set/vehicle/{new_id}/soc_module/config", {"type": None, "configuration": {}})
@@ -708,6 +753,7 @@ class Command:
             self.addChargeTemplate("addVehicle", {})
         if self.max_id_ev_template == -1:
             self.addEvTemplate("addVehicle", {})
+        add_acl_role("vehicle-<id>-access", new_id)
         pub_user_message(payload, connection_id, f'Neues EV mit ID \'{new_id}\' hinzugefügt.', MessageType.SUCCESS)
 
     def removeVehicle(self, connection_id: str, payload: dict) -> None:
@@ -719,6 +765,8 @@ class Command:
         if payload["data"]["id"] > 0:
             Pub().pub(f'openWB/vehicle/{payload["data"]["id"]}', "")
             ProcessBrokerBranch(f'vehicle/{payload["data"]["id"]}/').remove_topics()
+            remove_acl_role("vehicle-<id>-access", payload["data"]["id"])
+            remove_acl_role("vehicle-<id>-write-access", payload["data"]["id"])
             pub_user_message(
                 payload, connection_id,
                 f'EV mit ID \'{payload["data"]["id"]}\' gelöscht.', MessageType.SUCCESS)
@@ -729,12 +777,28 @@ class Command:
     def sendDebug(self, connection_id: str, payload: dict) -> None:
         pub_user_message(payload, connection_id, "Systembericht wird erstellt...", MessageType.INFO)
         previous_log_level = SubData.system_data["system"].data["debug_level"]
-        create_debug_log(payload["data"])
+        json_rsp = create_debug_log(payload["data"])
         Pub().pub("openWB/set/system/debug_level", previous_log_level)
-        pub_user_message(payload, connection_id, "Systembericht wurde versandt.", MessageType.SUCCESS)
+        if json_rsp is not None:
+            if json_rsp.get("error"):
+                pub_user_message(payload, connection_id,
+                                 f"Fehler: {json_rsp.get('message')}",
+                                 MessageType.ERROR)
+            elif json_rsp.get("status") == "created":
+                pub_user_message(payload, connection_id,
+                                 f"Neues Ticket {json_rsp.get('ticket_id')} erstellt.",
+                                 MessageType.SUCCESS)
+            elif json_rsp.get("status") == "updated":
+                pub_user_message(payload, connection_id,
+                                 f"Systembericht bestehendem Ticket {json_rsp.get('ticket_id')} hinzugefügt.",
+                                 MessageType.SUCCESS)
+        else:
+            pub_user_message(payload, connection_id,
+                             "Fehler beim Erstellen des Systemberichts.",
+                             MessageType.ERROR)
 
     def getChargeLog(self, connection_id: str, payload: dict) -> None:
-        Pub().pub(f'openWB/set/log/{connection_id}/data', chargelog.get_log_data(payload["data"]))
+        Pub().pub(f'openWB/set/log/{connection_id}/data', get_log_data(payload["data"]))
 
     def getDailyLog(self, connection_id: str, payload: dict) -> None:
         Pub().pub(f'openWB/set/log/daily/{payload["data"]["date"]}',
@@ -839,6 +903,16 @@ class Command:
                 Pub().pub("openWB/system/update_in_progress", False)
                 return
         parent_file = Path(__file__).resolve().parents[2]
+        if not SubData.general_data.data.extern and SubData.system_data["system"].data["secondary_auto_update"]:
+            for cp in SubData.cp_data.values():
+                # if chargepoint is external_openwb and not the second CP of duo and version is Release
+                if (
+                    cp.chargepoint.chargepoint_module.config.type == 'external_openwb' and
+                    cp.chargepoint.chargepoint_module.config.configuration.duo_num == 0 and
+                    cp.chargepoint.data.get.current_branch == "Release"
+                ):
+                    sleep(2)
+                    self.secondaryChargepointUpdate({"data": {"chargepoint": f"cp{cp.chargepoint.num}"}})
         if "branch" in payload["data"] and "tag" in payload["data"]:
             pub_user_message(
                 payload, connection_id,
@@ -853,16 +927,6 @@ class Command:
             run_command([
                 str(parent_file / "runs" / "update_self.sh"),
                 SubData.system_data["system"].data["current_branch"]])
-        if not SubData.general_data.data.extern and SubData.system_data["system"].data["secondary_auto_update"]:
-            for cp in SubData.cp_data.values():
-                # if chargepoint is external_openwb and not the second CP of duo and version is Release
-                if (
-                    cp.chargepoint.chargepoint_module.config.type == 'external_openwb' and
-                    cp.chargepoint.chargepoint_module.config.configuration.duo_num == 0 and
-                    cp.chargepoint.data.get.current_branch == "Release"
-                ):
-                    time.sleep(2)
-                    self.secondaryChargepointUpdate({"data": {"chargepoint": f"cp{cp.chargepoint.num}"}})
 
     def systemFetchVersions(self, connection_id: str, payload: dict) -> None:
         log.info("Fetch versions requested")
@@ -874,9 +938,15 @@ class Command:
     def createBackup(self, connection_id: str, payload: dict) -> None:
         pub_user_message(payload, connection_id, "Sicherung wird erstellt...", MessageType.INFO)
         parent_file = Path(__file__).resolve().parents[2]
-        result = run_command(
-            [str(parent_file / "runs" / "backup.sh"),
-             "1" if "use_extended_filename" in payload["data"] and payload["data"]["use_extended_filename"] else "0"])
+        try:
+            result = run_command([
+                str(parent_file / "runs" / "backup.sh"),
+                "1" if "use_extended_filename" in payload["data"] and payload["data"]["use_extended_filename"] else "0"
+            ], process_exception=False)
+        except subprocess.CalledProcessError:
+            pub_user_message(payload, connection_id,
+                             "Fehler beim Erstellen der Sicherung. Bitte Logdatei prüfen.", MessageType.ERROR)
+            return
         file_name = result.rstrip('\n')
         file_link = "/openWB/data/backup/" + file_name
         pub_user_message(payload, connection_id,
@@ -928,6 +998,9 @@ class Command:
         result = retrieveMSALTokens(cloud_backup_config.config)
         pub_user_message(payload, connection_id, result["message"], result["MessageType"])
 
+    def createEebusCert(self, connection_id: str, payload: dict) -> None:
+        create_pub_cert_ski(payload["data"]["io_device"])
+
     def factoryReset(self, connection_id: str, payload: dict) -> None:
         Path(Path(__file__).resolve().parents[2] / 'data' / 'restore' / 'factory_reset').touch()
         pub_user_message(payload, connection_id,
@@ -953,6 +1026,105 @@ class Command:
                 }
             })
 
+    def resetUserManagement(self, connection_id: str, payload: dict) -> None:
+        log.info("User management reset requested!")
+        parent_file = Path(__file__).resolve().parents[2]
+        run_command([str(parent_file / "runs" / "reset_user_management.sh")])
+        pub_user_message(payload, connection_id,
+                         "Benutzerverwaltung wurde zurückgesetzt.",
+                         MessageType.WARNING)
+
+    def updateAdminPassword(self, connection_id: str, payload: dict) -> None:
+        """ aktualisiert das Passwort des Admin-Benutzers im User-Management
+        """
+        log.warning("Admin password update requested!")
+        mosquitto_ctrl_config_file = "/home/openwb/.config/mosquitto_ctrl"
+        newPassword = str(payload['data']['newPassword']).strip()
+        if newPassword is None or len(newPassword) == 0:
+            pub_user_message(payload, connection_id,
+                             "Das Admin-Passwort darf nicht leer sein.",
+                             MessageType.ERROR)
+            return
+        with open(mosquitto_ctrl_config_file, "r") as file:
+            lines = file.readlines()
+        with open(mosquitto_ctrl_config_file, "w") as file:
+            for line in lines:
+                if line.startswith("-P "):
+                    file.write(f"-P {payload['data']['newPassword']}\n")
+                else:
+                    file.write(line)
+        pub_user_message(payload, connection_id,
+                         "Admin-Passwort wurde erfolgreich aktualisiert.",
+                         MessageType.SUCCESS)
+
+    def createPasswordResetToken(self, connection_id: str, payload: dict) -> None:
+        """ generiert ein Token zum Zurücksetzen eines Benutzer-Passworts
+        """
+        username = str(payload['data']['username']).strip()
+        if username is None or len(username) == 0:
+            pub_user_message(payload, connection_id,
+                             "Der Benutzername darf nicht leer sein.",
+                             MessageType.ERROR)
+            return
+        log.debug(f"Password reset token requested for user '{username}'")
+        email = get_user_email(username)
+        if email is not None:
+            token, expires_at = generate_password_reset_token(username)
+            send_password_reset_to_server(email, token, expires_at)
+        else:
+            log.warning(f"Password reset token requested for non-existing user '{username}' or user without email")
+            sleep(randrange(5, 25) * 0.1)  # artificial delay to mitigate user enumeration
+        pub_user_message(
+            payload, connection_id,
+            (f"Falls der Benutzername '{username}' existiert und eine E-Mail-Adresse hinterlegt ist, "
+             "wurde ein Token zum Zurücksetzen des Passworts generiert.<br />"
+             "Das Token ist eine Stunde lang gültig."),
+            MessageType.SUCCESS)
+
+    def resetUserPassword(self, connection_id: str, payload: dict) -> None:
+        """ setzt das Passwort eines Benutzers zurück
+        """
+        username = str(payload['data']['username']).strip()
+        token = str(payload['data']['token']).strip()
+        new_password = str(payload['data']['newPassword']).strip()
+        if username is None or len(username) == 0:
+            pub_user_message(payload, connection_id,
+                             "Der Benutzername darf nicht leer sein.",
+                             MessageType.ERROR)
+            return
+        if token is None or len(token) == 0:
+            pub_user_message(payload, connection_id,
+                             "Der Token darf nicht leer sein.",
+                             MessageType.ERROR)
+            return
+        if new_password is None or len(new_password) == 0:
+            pub_user_message(payload, connection_id,
+                             "Das neue Passwort darf nicht leer sein.",
+                             MessageType.ERROR)
+            return
+        if verify_password_reset_token(username, token):
+            if update_user_password(username, new_password):
+                if username == "admin":
+                    self.updateAdminPassword(connection_id, {
+                        "data": {
+                            "newPassword": new_password
+                        }
+                    })
+                pub_user_message(
+                    payload, connection_id,
+                    f"Das Passwort für den Benutzer '{username}' wurde erfolgreich zurückgesetzt.",
+                    MessageType.SUCCESS)
+            else:
+                pub_user_message(
+                    payload, connection_id,
+                    f"Der Passwort für Benutzer '{username}' konnte nicht zurückgesetzt werden!",
+                    MessageType.ERROR)
+        else:
+            pub_user_message(
+                payload, connection_id,
+                "Der Token ist ungültig oder abgelaufen.",
+                MessageType.ERROR)
+
 
 class ErrorHandlingContext:
     def __init__(self, payload: dict, connection_id: str):
@@ -963,16 +1135,17 @@ class ErrorHandlingContext:
         return None
 
     def __exit__(self, exception_type, exception, exception_traceback) -> bool:
-        if isinstance(exception, Exception):
+        if isinstance(exception, subprocess.CalledProcessError):
+            pub_user_message(self.payload, self.connection_id,
+                             (f'Fehler-Status: {exception.returncode}<br />Meldung: '
+                              f'{exception.stderr if exception.stderr else ""} '
+                              f'{exception.output if exception.output else ""}'),
+                             MessageType.ERROR)
+            return True
+        elif isinstance(exception, Exception):
             pub_user_message(self.payload, self.connection_id,
                              f'Es ist ein interner Fehler aufgetreten: {exception}', MessageType.ERROR)
             log.error({traceback.format_exc()})
-            return True
-        elif isinstance(exception, subprocess.CalledProcessError):
-            log.debug(exception.stdout)
-            pub_user_message(self.payload, self.connection_id,
-                             f'Fehler-Status: {exception.returncode}<br />Meldung: {exception.stderr}',
-                             MessageType.ERROR)
             return True
         else:
             return False

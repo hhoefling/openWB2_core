@@ -4,7 +4,7 @@ import { useMqttStore } from "@/stores/mqtt.js";
 export default {
   name: "VehicleSelectModal",
   props: {
-    modelValue: { required: true, type: Boolean, default: false },
+    modelValue: { required: true, type: Boolean },
     chargePointId: {
       type: Number,
       required: true,
@@ -18,16 +18,12 @@ export default {
   },
   computed: {
     vehicleList() {
-      let topicList = this.mqttStore.getVehicleList;
-      /* topicList is an object, but we need an array for our select input */
-      var vehicleList = [];
-      Object.keys(topicList).forEach((topic) => {
-        let vehicleId = parseInt(
-          topic.match(/(?:\/)([0-9]+)(?=\/)*/g)[0].replace(/[^0-9]+/g, ""),
-        );
-        vehicleList.push({ id: vehicleId, name: topicList[topic] });
+      return this.mqttStore.getVehicleList.map((id) => {
+        return {
+          id: id,
+          name: this.mqttStore.getVehicleName(id),
+        };
       });
-      return vehicleList;
     },
   },
   methods: {
@@ -93,11 +89,5 @@ export default {
 .modal-vehicle-select:deep(.modal-body) {
   max-height: 72vh;
   overflow-y: scroll;
-}
-
-.large-button {
-  height: 3.5rem;
-  font-size: 1.5rem;
-  padding: 0.75rem 1.5rem;
 }
 </style>

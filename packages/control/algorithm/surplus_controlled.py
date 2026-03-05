@@ -3,7 +3,8 @@ from typing import List, Optional, Tuple
 
 from control import data
 from control.algorithm import common
-from control.algorithm.chargemodes import CONSIDERED_CHARGE_MODES_PV_ONLY, CONSIDERED_CHARGE_MODES_SURPLUS
+from control.algorithm.chargemodes import (CONSIDERED_CHARGE_MODES_BIDI_DISCHARGE, CONSIDERED_CHARGE_MODES_PV_ONLY,
+                                           CONSIDERED_CHARGE_MODES_SURPLUS)
 from control.algorithm.filter_chargepoints import (get_chargepoints_by_chargemodes,
                                                    get_chargepoints_by_mode_and_counter,
                                                    get_preferenced_chargepoint_charging)
@@ -14,6 +15,7 @@ from control.chargepoint.chargepoint_state import ChargepointState, CHARGING_STA
 from control.counter import ControlRangeState, Counter
 from control.limiting_value import LoadmanagementLimit
 from control.loadmanagement import LimitingValue, Loadmanagement
+from helpermodules.phase_handling import voltages_mean
 
 
 log = logging.getLogger(__name__)
@@ -52,11 +54,13 @@ class SurplusControlled:
         while len(chargepoints):
             cp = chargepoints[0]
             missing_currents, counts = common.get_missing_currents_left(chargepoints)
-            available_currents, limit = Loadmanagement().get_available_currents_surplus(missing_currents,
-                                                                                        cp.data.get.voltages,
-                                                                                        counter,
-                                                                                        cp,
-                                                                                        feed_in=feed_in_yield)
+            available_currents, limit = Loadmanagement().get_available_currents_surplus(
+                missing_currents,
+                voltages_mean(cp.data.get.voltages),
+                counter,
+                cp,
+                feed_in=feed_in_yield
+            )
             cp.data.control_parameter.limit = limit
             available_for_cp = common.available_current_for_cp(cp, counts, available_currents, missing_currents)
             if counter.get_control_range_state(feed_in_yield) == ControlRangeState.MIDDLE:
@@ -76,7 +80,7 @@ class SurplusControlled:
 
             current = common.get_current_to_set(cp.data.set.current, current, cp.data.set.target_current)
             self._set_loadmangement_message(current, limit, cp)
-            limited_current = self._limit_adjust_current(cp, current)
+            limited_current = limit_adjust_current(cp, current)
             common.set_current_counterdiff(
                 cp.data.control_parameter.min_current,
                 limited_current,
@@ -105,35 +109,6 @@ class SurplusControlled:
                                          pv_charging.feed_in_limit is False, chargepoints))
         return cp_with_feed_in, cp_without_feed_in
 
-    # tested
-    def _limit_adjust_current(self, chargepoint: Chargepoint, new_current: float) -> float:
-        if chargepoint.template.data.charging_type == ChargingType.AC.value:
-            MAX_CURRENT = 5
-        else:
-            MAX_CURRENT = 30
-        msg = None
-        nominal_difference = chargepoint.data.set.charging_ev_data.ev_template.data.nominal_difference
-        if chargepoint.chargemode_changed or chargepoint.data.get.charge_state is False:
-            return new_current
-        else:
-            # Um max. +/- 5A pro Zyklus regeln
-            if (-MAX_CURRENT-nominal_difference
-                    < new_current - get_medium_charging_current(chargepoint.data.get.currents)
-                    < MAX_CURRENT+nominal_difference):
-                current = new_current
-            else:
-                if new_current < get_medium_charging_current(chargepoint.data.get.currents):
-                    current = get_medium_charging_current(chargepoint.data.get.currents) - MAX_CURRENT
-                    msg = f"Es darf um max {MAX_CURRENT}A unter den aktuell genutzten Strom geregelt werden."
-
-                else:
-                    current = get_medium_charging_current(chargepoint.data.get.currents) + MAX_CURRENT
-                    msg = f"Es darf um max {MAX_CURRENT}A über den aktuell genutzten Strom geregelt werden."
-            chargepoint.set_state_and_log(msg)
-            return max(current,
-                       chargepoint.data.control_parameter.min_current,
-                       chargepoint.data.set.target_current)
-
     def _fix_deviating_evse_current(self, chargepoint: Chargepoint) -> float:
         """Wenn Autos nicht die volle Ladeleistung nutzen, wird unnötig eingespeist. Dann kann um den noch nicht
         genutzten Soll-Strom hochgeregelt werden. Wenn Fahrzeuge entgegen der Norm mehr Ladeleistung beziehen, als
@@ -155,12 +130,14 @@ class SurplusControlled:
         for cp in get_chargepoints_by_chargemodes(CONSIDERED_CHARGE_MODES_PV_ONLY):
             try:
                 def phase_switch_necessary() -> bool:
-                    return cp.cp_ev_chargemode_support_phase_switch() and cp.data.get.phases_in_use != 1
+                    return (cp.cp_state_hw_support_phase_switch() and
+                            cp.data.get.phases_in_use != 1 and
+                            cp.data.control_parameter.template_phases == 0)
                 control_parameter = cp.data.control_parameter
                 if cp.chargemode_changed or cp.submode_changed:
-                    if control_parameter.state == ChargepointState.CHARGING_ALLOWED:
+                    if (control_parameter.state in CHARGING_STATES):
                         if cp.data.set.charging_ev_data.ev_template.data.prevent_charge_stop is False:
-                            threshold = evu_counter.calc_switch_off_threshold(cp)[0]
+                            threshold = evu_counter.calc_switch_off_threshold(cp)
                             if evu_counter.calc_raw_surplus() - cp.data.set.required_power < threshold:
                                 control_parameter.required_currents = [0]*3
                                 control_parameter.state = ChargepointState.NO_CHARGING_ALLOWED
@@ -182,7 +159,8 @@ class SurplusControlled:
                 log.exception(f"Fehler in der PV-gesteuerten Ladung bei {cp.num}")
 
     def set_required_current_to_max(self) -> None:
-        for cp in get_chargepoints_by_chargemodes(CONSIDERED_CHARGE_MODES_SURPLUS):
+        for cp in get_chargepoints_by_chargemodes(CONSIDERED_CHARGE_MODES_SURPLUS +
+                                                  CONSIDERED_CHARGE_MODES_BIDI_DISCHARGE):
             try:
                 charging_ev_data = cp.data.set.charging_ev_data
                 required_currents = cp.data.control_parameter.required_currents
@@ -206,3 +184,33 @@ class SurplusControlled:
                 control_parameter.required_current = max_current
             except Exception:
                 log.exception(f"Fehler in der PV-gesteuerten Ladung bei {cp.num}")
+
+
+# tested
+def limit_adjust_current(chargepoint: Chargepoint, new_current: float) -> float:
+    if chargepoint.template.data.charging_type == ChargingType.AC.value:
+        MAX_CURRENT = 5
+    else:
+        MAX_CURRENT = 30
+    msg = None
+    nominal_difference = chargepoint.data.set.charging_ev_data.ev_template.data.nominal_difference
+    if chargepoint.chargemode_changed or chargepoint.data.get.charge_state is False:
+        return new_current
+    else:
+        # Um max. +/- 5A pro Zyklus regeln
+        if (-MAX_CURRENT-nominal_difference
+                < new_current - get_medium_charging_current(chargepoint.data.get.currents)
+                < MAX_CURRENT+nominal_difference):
+            current = new_current
+        else:
+            if new_current < get_medium_charging_current(chargepoint.data.get.currents):
+                current = get_medium_charging_current(chargepoint.data.get.currents) - MAX_CURRENT
+                msg = f"Es darf um max {MAX_CURRENT}A unter den aktuell genutzten Strom geregelt werden."
+
+            else:
+                current = get_medium_charging_current(chargepoint.data.get.currents) + MAX_CURRENT
+                msg = f"Es darf um max {MAX_CURRENT}A über den aktuell genutzten Strom geregelt werden."
+        chargepoint.set_state_and_log(msg)
+        return max(current,
+                   chargepoint.data.control_parameter.min_current,
+                   chargepoint.data.set.target_current)

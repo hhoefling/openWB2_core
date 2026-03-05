@@ -9,7 +9,6 @@ class EvTemplateData:
     name: str = "Fahrzeug-Profil"
     max_current_multi_phases: int = 16
     max_phases: int = 3
-    phase_switch_pause: int = 2
     prevent_phase_switch: bool = False
     prevent_charge_stop: bool = False
     control_pilot_interruption: bool = False
@@ -21,6 +20,7 @@ class EvTemplateData:
     efficiency: float = 90
     nominal_difference: float = 1
     keep_charge_active_duration: int = 40
+    bidi: bool = False
 
 
 def ev_template_data_factory() -> EvTemplateData:

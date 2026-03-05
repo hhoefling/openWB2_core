@@ -22,7 +22,7 @@ def time_factory():
 @dataclass
 class Limit:
     selected: str = "none"
-    amount: int = 1000
+    amount: int = 50000
     soc: int = 50
 
 
@@ -77,6 +77,8 @@ class TimeframePlan(PlanBase):
 
 @dataclass
 class ScheduledChargingPlan(PlanBase):
+    bidi_charging_enabled: bool = False
+    bidi_power: int = 10000
     current: int = 14
     dc_current: float = 145
     et_active: bool = False

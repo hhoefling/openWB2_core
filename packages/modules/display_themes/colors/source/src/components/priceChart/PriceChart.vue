@@ -1,7 +1,6 @@
 <template>
 	<div class="pricesettings">
 		<div class="grapharea rounded shadow p-2">
-			<span>Anbieter: {{ etData.etProvider }}</span>
 			<figure id="pricechart">
 				<svg viewBox="0 0 400 270">
 					<g
@@ -161,7 +160,7 @@ const plotdata = computed(() => {
 })
 const barwidth = computed(() => {
 	if (plotdata.value.length > 1) {
-		return (width - margin.left - margin.right) / plotdata.value.length - 1
+		return (width - margin.left - margin.right) / plotdata.value.length
 	} else {
 		return 0
 	}
@@ -205,13 +204,16 @@ const linePath = computed(() => {
 	]
 	return generator(points as [number, number][])
 })
-
 const xAxisGenerator = computed(() => {
 	return axisBottom<Date>(xScale.value)
 		.ticks(plotdata.value.length)
 		.tickSize(5)
 		.tickSizeInner(-height)
-		.tickFormat((d) => (d.getHours() % 6 == 0 ? timeFormat('%H:%M')(d) : ''))
+		.tickFormat((d) =>
+			d.getHours() % 6 == 0 && d.getMinutes() == 0
+				? timeFormat('%H:%M')(d)
+				: '',
+		)
 })
 const yAxisGenerator = computed(() => {
 	return axisLeft<number>(yScale.value)
@@ -253,7 +255,11 @@ const draw = computed(() => {
 		.selectAll('.tick line')
 		.attr('stroke', 'var(--color-bg)')
 		.attr('stroke-width', (d) =>
-			(d as Date).getHours() % 6 == 0 ? '2' : '0.5',
+			(d as Date).getMinutes() == 0
+				? (d as Date).getHours() % 6 == 0
+					? '2'
+					: '0.5'
+				: '0',
 		)
 	xAxis.select('.domain').attr('stroke', 'var(--color-bg')
 	// Y Axis

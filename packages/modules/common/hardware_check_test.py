@@ -8,8 +8,8 @@ from modules.common import hardware_check
 from modules.common.component_state import CounterState, EvseState
 from modules.common.evse import Evse
 from modules.common.hardware_check import (
-    EVSE_BROKEN, LAN_ADAPTER_BROKEN, METER_BROKEN_VOLTAGES, METER_IMPLAUSIBLE_VALUE, METER_NO_SERIAL_NUMBER,
-    METER_PROBLEM, OPEN_TICKET, USB_ADAPTER_BROKEN, SeriesHardwareCheckMixin, _check_meter_values)
+    EVSE_BROKEN, LAN_ADAPTER_BROKEN, METER_BROKEN_VOLTAGES, METER_PROBLEM, OPEN_TICKET, USB_ADAPTER_BROKEN,
+    SeriesHardwareCheckMixin, _check_meter_values)
 from modules.common.modbus import NO_CONNECTION, ModbusSerialClient_, ModbusTcpClient_
 from modules.conftest import SAMPLE_IP, SAMPLE_PORT
 from modules.internal_chargepoint_handler.clients import ClientHandler
@@ -109,33 +109,9 @@ def test_check_meter_values_voltages(voltages, power, expected_msg, monkeypatch)
     assert msg == expected_msg if expected_msg is None else expected_msg.format(voltages)
 
 
-@pytest.mark.parametrize(
-    "currents, power, expected_msg",
-    [pytest.param([0.4, 0, 0], -80, None, id="Kriechströme"),
-     pytest.param([1, 0, 0], 0, METER_IMPLAUSIBLE_VALUE.format([0]*3, [1, 0, 0], [230]*3),
-                  id="zu hoher positiver Strom"),
-     pytest.param([0, -1, 0], 0, METER_IMPLAUSIBLE_VALUE.format([0]*3, [0, -1, 0], [230]*3),
-                  id="zu hoher negativer Strom"),
-     pytest.param([0.1, 0, 0], 120, METER_IMPLAUSIBLE_VALUE.format([40]*3, [0.1, 5, 0], [230]*3),
-                  id="zu niedriger Strom bei Leistung"),
-     ]
-)
-def test_check_meter_values_powers(currents, power, expected_msg, monkeypatch):
-    # setup
-    counter_state = Mock(spec=CounterState, voltages=[230]*3, currents=currents, powers=[power/3]*3, power=power)
-    # execution
-    msg = _check_meter_values(counter_state)
-
-    # assert
-    assert msg == expected_msg if expected_msg is None else expected_msg.format(counter_state.powers,
-                                                                                counter_state.currents,
-                                                                                counter_state.voltages)
-
-
 @patch('modules.common.hardware_check.ClientHandlerProtocol')
 @pytest.mark.parametrize("serial_number, voltages, expected",
-                         [("0", [230]*3, (True, METER_NO_SERIAL_NUMBER, CounterState)),
-                          (12345, [230]*3, (True, None, CounterState)),
+                         [(12345, [230]*3, (True, None, CounterState)),
                           (Exception(), [230]*3, (False, METER_PROBLEM, None))])
 def test_check_meter(
     MockClientHandlerProtocol: Mock,

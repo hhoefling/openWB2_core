@@ -16,6 +16,8 @@ import {
   faCalendarDay as fasCalendarDay,
   faCalendarWeek as fasCalendarWeek,
   faCalendarAlt as fasCalendarAlt,
+  faRightLeft as fasRightLeft,
+  faRightLong as fasRightLong,
   faCoins as fasCoins,
 } from "@fortawesome/free-solid-svg-icons";
 /* add icons to the library */
@@ -24,6 +26,8 @@ library.add(
   fasCalendarDay,
   fasCalendarWeek,
   fasCalendarAlt,
+  fasRightLeft,
+  fasRightLong,
   fasCoins,
 );
 
@@ -460,7 +464,7 @@ export default {
             />
           </i-form-group>
           <i-form-group>
-            <i-form-label>Anzahl Phasen</i-form-label>
+            <i-form-label>Anzahl Phasen bei Überschuss</i-form-label>
             <i-button-group block>
               <i-button
                 :color="
@@ -1300,7 +1304,7 @@ export default {
                   @click="
                     setChargePointConnectedVehicleScheduledChargingPlanActive(
                       modalChargePointId,
-                      plan.id,
+                      planKey,
                       !plan.active,
                     )
                   "
@@ -1340,6 +1344,10 @@ export default {
                         :icon="['fas', 'car-battery']"
                       />
                       {{ plan.limit.soc_scheduled }}&nbsp;%
+                      <font-awesome-icon
+                        :icon="['fas', plan.bidi_charging_enabled ? 'right-left' : 'right-long']"
+                      />
+                      {{ plan.limit.soc_limit }}&nbsp;%
                     </div>
                     <div v-if="plan.limit.selected == 'amount'">
                       <font-awesome-icon
@@ -1436,7 +1444,7 @@ export default {
                     @click="
                       setChargePointConnectedVehicleTimeChargingPlanActive(
                         modalChargePointId,
-                        plan.id,
+                        planKey,
                         !plan.active,
                       )
                     "

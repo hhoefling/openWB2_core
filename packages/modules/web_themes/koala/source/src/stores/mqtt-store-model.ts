@@ -5,15 +5,7 @@ export interface ThemeConfiguration {
   vehicle_card_view_breakpoint: number;
   chargePoint_table_search_input_field: boolean;
   vehicle_table_search_input_field: boolean;
-}
-
-export interface ConnectionOptions {
-  protocol: string;
-  host: string;
-  port: number;
-  endpoint: string;
-  connectTimeout: number;
-  reconnectPeriod: number;
+  top_carousel_slide_order: Array<string>;
 }
 
 export interface TopicObject {
@@ -27,6 +19,11 @@ export interface TopicList {
 
 export interface TopicCount {
   [key: string]: number;
+}
+
+export interface SystemCommandEvent {
+  command: string;
+  data: unknown;
 }
 
 export interface Hierarchy {
@@ -116,7 +113,7 @@ export interface ChargeTemplateConfiguration {
 }
 export interface ValueObject {
   textValue: string;
-  value: number;
+  value?: number;
   unit: string;
   scaledValue: number;
   scaledUnit: string;
@@ -134,6 +131,8 @@ export interface ScheduledChargingPlan {
   id: number;
   name: string;
   active: boolean;
+  bidi_charging_enabled: boolean;
+  bidi_power: number;
   et_active: boolean;
   current: number;
   dc_current: number;

@@ -1,9 +1,24 @@
 <template>
-  <q-card ref="cardRef" class="full-height card-width">
-    <q-card-section class="text-h6 text-bold ellipsis" :title="vehicle?.name">
-      {{ vehicle?.name }}
+  <q-card
+    ref="cardRef"
+    class="card-width"
+    :class="{ 'full-height': props.fullHeight }"
+  >
+    <q-card-section class="row no-wrap">
+      <div class="text-h6 text-bold ellipsis" :title="vehicle?.name">
+        {{ vehicle?.name }}
+      </div>
+      <q-space />
+      <q-btn
+        v-if="props.closeButton"
+        icon="close"
+        flat
+        round
+        dense
+        v-close-popup
+      />
     </q-card-section>
-    <q-separator inset />
+    <q-separator class="q-mt-sm" />
     <q-card-section class="row q-mt-sm">
       <div class="col">
         <div class="text-subtitle2">Hersteller:</div>
@@ -18,32 +33,33 @@
     <q-card-section>
       <VehicleConnectionStateIcon :vehicle-id="vehicleId" class="q-mt-sm" />
     </q-card-section>
-    <q-separator inset class="q-mt-sm" />
-    <q-card-section>
-      <SliderDouble
-        v-if="vehicleSocType"
-        class="q-mt-sm"
-        :current-value="vehicleSocValue"
-        :readonly="true"
-        :limit-mode="'none'"
-        :vehicle-soc-type="vehicleSocType"
-        :on-edit-soc="openSocDialog"
-        :on-refresh-soc="refreshSoc"
-      />
-      <slot name="card-footer"></slot>
-    </q-card-section>
+    <div v-if="vehicleSocType">
+      <q-separator inset class="q-mt-sm" />
+      <q-card-section>
+        <SliderDouble
+          v-if="vehicleSocType"
+          :current-value="vehicleSocValue"
+          :readonly="true"
+          :limit-mode="'none'"
+          :vehicle-soc-type="vehicleSocType"
+          :on-edit-soc="openSocDialog"
+          :on-refresh-soc="refreshSoc"
+        />
+      </q-card-section>
+    </div>
+    <q-card-actions v-if="$slots['card-actions']" align="right">
+      <slot name="card-actions"></slot>
+    </q-card-actions>
+    <!-- //////////////////////  modal soc dialog  //////////////////// -->
+    <ManualSocDialog
+      :vehicleId="props.vehicleId"
+      v-model:socDialogVisible="socInputVisible"
+    />
   </q-card>
-
-  <!-- //////////////////////  input dialog Manual SoC   //////////////////// -->
-
-  <ManualSocDialog
-    :vehicleId="props.vehicleId"
-    v-model:socDialogVisible="socInputVisible"
-  />
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, inject } from 'vue';
+import { computed, ref } from 'vue';
 import { useMqttStore } from 'src/stores/mqtt-store';
 import { useQuasar } from 'quasar';
 import SliderDouble from './SliderDouble.vue';
@@ -51,11 +67,11 @@ import ManualSocDialog from './ManualSocDialog.vue';
 import VehicleConnectionStateIcon from './VehicleConnectionStateIcon.vue';
 
 const cardRef = ref<{ $el: HTMLElement } | null>(null);
-const setCardWidth =
-  inject<(width: number | undefined) => void>('setCardWidth');
 
 const props = defineProps<{
   vehicleId: number;
+  closeButton?: boolean;
+  fullHeight?: boolean;
 }>();
 
 const mqttStore = useMqttStore();
@@ -88,11 +104,6 @@ const refreshSoc = () => {
     message: 'SoC Update angefordert.',
   });
 };
-
-onMounted(() => {
-  const cardWidth = cardRef.value?.$el.offsetWidth;
-  setCardWidth?.(cardWidth);
-});
 </script>
 
 <style lang="scss" scoped>
@@ -101,20 +112,20 @@ onMounted(() => {
 }
 
 .q-card__section {
-  padding-left: 16px;
-  padding-right: 16px;
+  padding-left: $space-base;
+  padding-right: $space-base;
   padding-top: 0;
   padding-bottom: 0;
 }
 
 .q-card__section:first-of-type {
-  padding-top: 16px;
+  padding-top: $space-base;
   padding-bottom: 0;
 }
 
 .q-card__section:last-of-type {
   padding-top: 0;
-  padding-bottom: 16px;
+  padding-bottom: $space-base;
 }
 
 .q-card__section:not(:first-of-type):not(:last-of-type) {

@@ -97,6 +97,7 @@ class skoda:
     async def reconnect(self):
         # Get code challenge and verifier
         code_verifier, code_challenge = self.get_code_challenge()
+        self.log.debug("Starting Skoda reconnect/auth flow")
 
         # Get authorize page
         _scope = 'address badge birthdate cars driversLicense dealers email mileage mbb nationalIdentifier'
@@ -104,7 +105,7 @@ class skoda:
         payload = {
             'client_id': CLIENT_ID,
             'scope': _scope,
-            'response_type': 'code id_token',
+            'response_type': 'code',
             'nonce': secrets.token_urlsafe(12),
             'redirect_uri': 'myskoda://redirect/login/',
             'state': str(uuid.uuid4()),
@@ -113,6 +114,7 @@ class skoda:
         }
 
         response = await self.session.get(LOGIN_BASE + '/authorize', params=payload)
+        self.log.debug("Authorize request finished with status=%s", response.status)
         if response.status >= 400:
             self.log.error(f"Authorize: Non-2xx response ({response.status})")
             # Non 2xx response, failed
@@ -121,30 +123,40 @@ class skoda:
         # Fill form with email (username)
         (form, action) = self.form_from_response(await response.read())
         form['email'] = self.username
+        self.log.debug("Submitting email form to action=%s", action)
         response = await self.session.post(LOGIN_HANDLER_BASE+action, data=form)
+        self.log.debug("Email form response status=%s", response.status)
         if response.status >= 400:
             self.log.error("Email: Non-2xx response")
             return False
 
         # Fill form with password
         (form, action) = self.password_form(await response.read())
+        if not form or not action:
+            self.log.error("Password form parsing failed")
+            return False
         form['password'] = self.password
         url = LOGIN_HANDLER_BASE + action
+        self.log.debug("Submitting password form to url=%s", url)
         response = await self.session.post(url, data=form, allow_redirects=False)
+        self.log.debug("Password form response status=%s", response.status)
 
         # Can get a 303 redirect for a "terms and conditions" page
         if (response.status == 303):
             url = response.headers['Location']
+            self.log.debug("Received 303 redirect to %s", url)
             if ("terms-and-conditions" in url):
                 # Get terms and conditions page
                 url = LOGIN_HANDLER_BASE + url
+                self.log.debug("Opening terms and conditions page: %s", url)
                 response = await self.session.get(url, data=form, allow_redirects=False)
                 (form, action) = self.form_from_response(await response.read())
 
                 url = LOGIN_HANDLER_BASE + action
+                self.log.debug("Submitting terms and conditions form to %s", url)
                 response = await self.session.post(url, data=form, allow_redirects=False)
 
-                self.log.warn("Agreed to terms and conditions")
+                self.log.warning("Agreed to terms and conditions")
             else:
                 self.log.error("Got unknown 303 redirect")
                 return False
@@ -152,18 +164,26 @@ class skoda:
         # Handle every single redirect and stop if the redirect
         # URL uses the weconnect adapter.
         while (True):
+            if 'Location' not in response.headers:
+                self.log.error("Redirect handling stopped: missing Location header (status=%s)",
+                               response.status)
+                return False
+
             url = response.headers['Location']
+            self.log.debug("Redirect: status=%s location=%s", response.status, url)
             if (url.split(':')[0] == "myskoda"):
-                if not ('id_token' in url):
-                    self.log.error("Missing id token")
+                if not ('code' in url):
+                    self.log.error("Missing authorization code")
                     return False
                     # Parse query string
-                query_string = url.split('#')[1]
+                query_string = url.split('?')[1]
                 query = {x[0]: x[1] for x in [x.split("=") for x in query_string.split("&")]}
+                self.log.debug("Authorization redirect reached")
                 break
 
             if (response.status != 302):
-                self.log.error("Not redirected, status %u" % response.status)
+                self.log.error("Not redirected, status=%u, last_url=%s",
+                               response.status, url)
                 return False
 
             response = await self.session.get(url, data=form, allow_redirects=False)
@@ -179,6 +199,7 @@ class skoda:
         }
         response = await self.session.post(API_BASE + '/v1/authentication/exchange-authorization-code',
                                            params=params, json=payload)
+        self.log.debug("Authorization code exchange status=%s", response.status)
         if response.status >= 400:
             self.log.error("Login: Non-2xx response")
             # Non 2xx response, failed
@@ -187,6 +208,7 @@ class skoda:
 
         # Update header with final token
         self.headers['Authorization'] = 'Bearer %s' % self.tokens["accessToken"]
+        self.log.debug("Skoda authorization completed successfully")
 
         # Success
         return True
@@ -214,20 +236,21 @@ class skoda:
         return True
 
     async def get_status(self):
-        status_url = f"{API_BASE}/v2/vehicle-status/{self.vin}/driving-range"
-        response = await self.session.get(status_url, headers=self.headers)
+        vehicle_status_url = f"{API_BASE}/v2/vehicle-status/{self.vin}/driving-range"
+        charging_url = f"{API_BASE}/v1/charging/{self.vin}"
+        response = await self.session.get(vehicle_status_url, headers=self.headers)
 
         # If first attempt fails, try to refresh tokens
         if response.status >= 400:
             self.log.debug("Refreshing tokens")
             if await self.refresh_tokens():
-                response = await self.session.get(status_url, headers=self.headers)
+                response = await self.session.get(vehicle_status_url, headers=self.headers)
 
         # If refreshing tokens failed, try a full reconnect
         if response.status >= 400:
             self.log.info("Reconnecting")
             if await self.reconnect():
-                response = await self.session.get(status_url, headers=self.headers)
+                response = await self.session.get(vehicle_status_url, headers=self.headers)
             else:
                 self.log.error("Reconnect failed")
                 return {}
@@ -237,15 +260,46 @@ class skoda:
             return {}
 
         status_data = await response.json()
-        self.log.debug(f"Status data from Skoda API: {status_data}")
+        self.log.debug(f"Status data from Skoda API (vehicle-status): {status_data}")
+
+        # check if all values are valid, otherwise use charging_url
+        electric_engine_range = {}
+        if 'primaryEngineRange' in status_data and status_data['primaryEngineRange']['engineType'] == "electric":
+            electric_engine_range = status_data['primaryEngineRange']
+        elif 'secondaryEngineRange' in status_data and status_data['secondaryEngineRange']['engineType'] == "electric":
+            electric_engine_range = status_data['secondaryEngineRange']
+
+        required_keys = ['currentSoCInPercent', 'remainingRangeInKm']
+        if not all(k in electric_engine_range for k in required_keys) or 'carCapturedTimestamp' not in status_data:
+            self.log.info("vehicle-status did not contain all values, trying charging_url")
+            response = await self.session.get(charging_url, headers=self.headers)
+
+            if response.status >= 400:
+                self.log.error("Get status from charging_url failed")
+                return {}
+
+            status_data = await response.json()
+            self.log.debug(f"Status data from Skoda API (charging): {status_data}")
+
+            soc = status_data['status']['battery']['stateOfChargeInPercent']
+            range_km = (
+                status_data['status']['battery'].get('remainingCruisingRangeInMeters', 1000) / 1000
+            )
+        else:
+            soc = electric_engine_range['currentSoCInPercent']
+            range_km = electric_engine_range['remainingRangeInKm']
+
+        timestamp = status_data['carCapturedTimestamp'].split('.')[0]
+        if not timestamp.endswith('Z'):
+            timestamp += 'Z'
 
         return {
             'charging': {
                 'batteryStatus': {
                     'value': {
-                        'currentSOC_pct': status_data['primaryEngineRange']['currentSoCInPercent'],
-                        'cruisingRangeElectric_km': status_data['primaryEngineRange']['remainingRangeInKm'],
-                        'carCapturedTimestamp': status_data['carCapturedTimestamp'].split('.')[0] + 'Z',
+                        'currentSOC_pct': soc,
+                        'cruisingRangeElectric_km': range_km,
+                        'carCapturedTimestamp': timestamp,
                     }
                 }
             }

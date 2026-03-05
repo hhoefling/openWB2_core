@@ -2,12 +2,14 @@
 import { useMqttStore } from "@/stores/mqtt.js";
 import DashboardCard from "@/components/DashboardCard.vue";
 import ChargeModeModal from "../ChargePoints/ChargeModeModal.vue";
+import BatteryModeModal from "../Battery/BatteryModeModal.vue";
 
 export default {
   name: "DashboardFlowCard",
   components: {
     DashboardCard,
     ChargeModeModal,
+    BatteryModeModal,
   },
   props: {
     changesLocked: { required: false, type: Boolean, default: false },
@@ -27,6 +29,7 @@ export default {
         numColumns: 3,
       },
       modalChargeModeSettingsVisible: false,
+      modalBatteryModeSettingsVisible: false,
       modalChargePointId: 0,
     };
   },
@@ -58,11 +61,17 @@ export default {
     gridPower() {
       return this.mqttStore.getGridPower("object");
     },
+    showGridPower() {
+      return this.gridPower.value !== undefined;
+    },
     pvPower() {
       return this.mqttStore.getPvPower("object");
     },
     homePower() {
       return this.mqttStore.getHomePower("object");
+    },
+    showHomePower() {
+      return this.homePower.value !== undefined;
     },
     batteryPower() {
       return this.mqttStore.getBatteryPower("object");
@@ -197,6 +206,9 @@ export default {
       return this.homePower.value < 0;
     },
     pvProduction() {
+      return this.pvPower.value < 0;
+    },
+    pvConsumption() {
       return this.pvPower.value > 0;
     },
     batteryDischarging() {
@@ -229,10 +241,22 @@ export default {
     chargePoint3Discharging() {
       return this.chargePoint3Power.value < 0;
     },
+    batteryModeIcon() {
+    const mode = this.mqttStore.getBatteryMode;
+      switch (mode) {
+        case "ev_mode": return "icons/owbVehicle.svg";
+        case "bat_mode": return "icons/owbBattery.svg";
+        case "min_soc_bat_mode": return "icons/owbBattery40.svg";
+        default: return "---";
+      }
+    },
     svgComponents() {
       var components = [];
       // add grid component
-      if (this.mqttStore.getThemeConfiguration.enable_dashboard_card_grid) {
+      if (
+        this.showGridPower &&
+        this.mqttStore.getThemeConfiguration.enable_dashboard_card_grid
+      ) {
         components.push({
           id: "grid",
           class: {
@@ -251,6 +275,7 @@ export default {
       }
       // add home component
       if (
+        this.showHomePower &&
         this.mqttStore.getThemeConfiguration
           .enable_dashboard_card_home_consumption
       ) {
@@ -279,9 +304,9 @@ export default {
           id: "pv",
           class: {
             base: "pv",
-            valueLabel: this.pvProduction ? "fill-success" : "",
+            valueLabel: this.pvProduction || this.pvConsumption ? "fill-success" : "",
             animated: this.pvProduction,
-            animatedReverse: false,
+            animatedReverse: this.pvConsumption,
           },
           position: {
             row: 1,
@@ -311,6 +336,9 @@ export default {
           label: ["Speicher", this.absoluteValue(this.batteryPower).textValue],
           soc: this.batterySoc,
           icon: "icons/owbBattery.svg",
+          clicked: () => {
+            this.selectBatteryMode();
+          },
         });
       }
       // charge point and vehicle components
@@ -453,7 +481,7 @@ export default {
               }
             }
           }
-        } else {
+        } else if (this.chargePointSumPower.value !== undefined) {
           // add charge point sum component
           components.push({
             id: "charge-point-sum",
@@ -488,6 +516,7 @@ export default {
       // hide all modals if lock is kicking in
       if (oldValue !== true && newValue === true) {
         this.modalChargeModeSettingsVisible = false;
+        this.modalBatteryModeSettingsVisible = false;
       }
     },
   },
@@ -566,6 +595,11 @@ export default {
         this.modalChargeModeSettingsVisible = true;
       }
     },
+    selectBatteryMode() {
+      if (!this.changesLocked) {
+        this.modalBatteryModeSettingsVisible = true;
+      }
+    },
   },
 };
 </script>
@@ -574,6 +608,9 @@ export default {
   <charge-mode-modal
     v-model="modalChargeModeSettingsVisible"
     :charge-point-id="modalChargePointId"
+  />
+  <battery-mode-modal
+    v-model="modalBatteryModeSettingsVisible"
   />
   <dashboard-card color="primary">
     <template #headerLeft>
@@ -734,6 +771,25 @@ export default {
                   :width="svgIconWidth"
                 />
               </g>
+              <g v-if="component.id === 'battery'">
+                <rect
+                  :x="svgSize.circleRadius * 1.2"
+                  :y="-svgSize.circleRadius * 1.4"
+                  :width="svgSize.circleRadius * 1.1"
+                  :height="svgSize.circleRadius * 0.7"
+                  :rx="svgSize.circleRadius * 0.3"
+                  :ry="svgSize.circleRadius * 0.55"
+                  class="battery-mode-button"
+                  opacity="1"
+                />
+                <image
+                  :href="batteryModeIcon"
+                  :x="svgSize.circleRadius * 1.45"
+                  :y="-svgSize.circleRadius * 1.35"
+                  :height="svgSize.circleRadius * 0.6"
+                  :width="svgSize.circleRadius * 0.6"
+                />
+              </g>
             </g>
           </g>
         </svg>
@@ -882,6 +938,10 @@ text .fill-dark {
 
 .battery circle:not(.soc) {
   fill: var(--color--warning-90);
+}
+
+.battery-mode-button {
+  stroke: var(--color--warning) !important;
 }
 
 .home text {
